@@ -1,0 +1,19 @@
+{
+  "kind": "collectionType",
+  "collectionName": "blog_articles",
+  "info": {
+    "singularName": "blog-article",
+    "pluralName": "blog-articles",
+    "displayName": "Blog Article"
+  },
+  "attributes": {
+    "title": { "type": "string" },
+    "slug": { "type": "uid" },
+    "wordCount": { "type": "integer" },
+    "author": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::blog-author.blog-author"
+    }
+  }
+}

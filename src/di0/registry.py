@@ -12,6 +12,7 @@ from di0.adapters.metabase_execution import MetabaseExecution
 from di0.adapters.noop_execution import NoopExecution
 from di0.adapters.sqlglot_dialect import SqlglotDialect
 from di0.adapters.sqlglot_validation import SqlglotOfflineValidation
+from di0.adapters.strapi_schema import StrapiContentTypeSchema
 from di0.ports import DialectPort, ExecutionPort, SchemaPort, ValidationPort
 from di0.profile import Profile
 
@@ -22,6 +23,15 @@ def build_schema_port(profile: Profile) -> SchemaPort:
         if not manifest_path:
             raise ValueError("dbt-manifest schema source requires `manifest_path` in the profile")
         return DbtManifestSchema(str(manifest_path))
+    if profile.schema_source == "strapi-content-types":
+        schema_dir = profile.options.get("schema_dir")
+        if not schema_dir:
+            raise ValueError("strapi-content-types schema source requires `schema_dir`")
+        return StrapiContentTypeSchema(
+            str(schema_dir),
+            namespace=str(profile.options.get("namespace", "public")),
+            information_schema_path=profile.options.get("information_schema_path"),
+        )
     raise ValueError(f"unknown schema_source: {profile.schema_source}")
 
 

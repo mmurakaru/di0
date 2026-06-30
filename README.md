@@ -66,3 +66,13 @@ uv run di0 query "SELECT customer_id, current_arr FROM analytics.dim_customers"
 
 Execution is gated on validation: a query that fails validation never reaches the
 warehouse.
+
+A dashboard is a versioned spec built only from validated queries. With an
+authoring-capable execution adapter:
+
+```bash
+uv run di0 author deliverables/arr_overview.yml
+```
+
+Every query in the spec is validated before any card is created; row-only
+adapters (which cannot author) refuse the request.

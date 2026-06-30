@@ -12,7 +12,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from di0.deliverable import (
+    DashboardSpec,
+    ResolvedCard,
+    ResolvedDashboard,
+    ResolvedTab,
+)
 from di0.ports import (
+    Deliverable,
     DialectPort,
     ExecutionPort,
     QueryResult,
@@ -26,6 +33,10 @@ class ValidationFailed(Exception):
     def __init__(self, result: ValidationResult) -> None:
         super().__init__("; ".join(result.errors) or "validation failed")
         self.result = result
+
+
+class AuthoringUnsupported(Exception):
+    """Raised when a deliverable is requested of a row-only execution adapter."""
 
 
 @dataclass(frozen=True)
@@ -46,6 +57,40 @@ class Engine:
             raise ValidationFailed(result)
         composed = self.dialect_port.compose(sql)
         return self.execution_port.execute(composed)
+
+    def author(self, spec: DashboardSpec, base_dir: Path | None = None) -> Deliverable:
+        """Validate every query in a dashboard spec, then author the artifact.
+
+        Authoring is refused unless the execution adapter supports it, and no card
+        is created unless every query in the spec is valid.
+        """
+        if not self.execution_port.supports_authoring:
+            raise AuthoringUnsupported(
+                "the configured execution adapter cannot author deliverables"
+            )
+        root = base_dir or Path.cwd()
+        schema = self.schema_port.resolve()
+        resolved_tabs: list[ResolvedTab] = []
+        for tab in spec.tabs:
+            resolved_cards: list[ResolvedCard] = []
+            for card in tab.cards:
+                sql = (root / card.query).read_text()
+                composed = self.dialect_port.compose(sql)
+                result = self.validation_port.validate(composed, schema)
+                if not result.ok:
+                    raise ValidationFailed(result)
+                resolved_cards.append(
+                    ResolvedCard(
+                        title=card.title,
+                        sql=composed,
+                        display=card.display,
+                        size_x=card.size_x,
+                        size_y=card.size_y,
+                    )
+                )
+            resolved_tabs.append(ResolvedTab(name=tab.name, cards=tuple(resolved_cards)))
+        dashboard = ResolvedDashboard(name=spec.name, tabs=tuple(resolved_tabs))
+        return self.execution_port.author(dashboard)
 
     def validate_paths(self, paths: list[Path]) -> list[tuple[Path, ValidationResult]]:
         """Validate every SQL file against the schema, resolved once.

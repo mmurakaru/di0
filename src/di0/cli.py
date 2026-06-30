@@ -11,7 +11,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from di0.core import Engine, ValidationFailed
+from di0.core import AuthoringUnsupported, Engine, ValidationFailed
+from di0.deliverable import DashboardSpec
 from di0.profile import DEFAULT_PROFILE_NAME, load_profile
 from di0.registry import (
     build_dialect_port,
@@ -64,6 +65,23 @@ def _cmd_query(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_author(args: argparse.Namespace) -> int:
+    engine = _build_engine(args.profile)
+    spec_path = Path(args.spec)
+    spec = DashboardSpec.from_file(spec_path)
+    try:
+        deliverable = engine.author(spec, base_dir=spec_path.parent)
+    except ValidationFailed as failure:
+        for error in failure.result.errors:
+            print(f"INVALID: {error}", file=sys.stderr)
+        return 1
+    except AuthoringUnsupported as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 2
+    print(f"Authored {deliverable.kind} {deliverable.identifier}: {deliverable.detail['url']}")
+    return 0
+
+
 def _cmd_check(args: argparse.Namespace) -> int:
     engine = _build_engine(args.profile)
     paths = sorted(Path(args.queries).glob("**/*.sql"))
@@ -102,6 +120,10 @@ def main(argv: list[str] | None = None) -> int:
     check = sub.add_parser("check", help="validate every .sql file against the schema (CI gate)")
     check.add_argument("--queries", default="queries", help="directory of .sql files")
     check.set_defaults(func=_cmd_check)
+
+    author = sub.add_parser("author", help="author a dashboard from a deliverable spec")
+    author.add_argument("spec", help="path to a dashboard spec (.yml)")
+    author.set_defaults(func=_cmd_author)
 
     args = parser.parse_args(argv)
     return args.func(args)

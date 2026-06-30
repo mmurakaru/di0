@@ -66,6 +66,23 @@ def _cmd_query(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_guard(args: argparse.Namespace) -> int:
+    from di0.guard import scan_tree
+
+    violations = scan_tree(Path(args.path))
+    for violation in violations:
+        snippet = violation.literal.splitlines()[0][:60]
+        print(
+            f"VIOLATION {violation.file}:{violation.line} {violation.reason}: {snippet!r}",
+            file=sys.stderr,
+        )
+    if violations:
+        print(f"\n{len(violations)} invariant violation(s)", file=sys.stderr)
+        return 1
+    print("core holds no warehouse, dialect, or physical reference")
+    return 0
+
+
 def _cmd_schema(args: argparse.Namespace) -> int:
     import json
 
@@ -120,6 +137,10 @@ def main(argv: list[str] | None = None) -> int:
 
     schema = sub.add_parser("schema", help="resolve and print the schema as JSON")
     schema.set_defaults(func=_cmd_schema)
+
+    guard = sub.add_parser("guard", help="fail if the core names a warehouse/dialect/table")
+    guard.add_argument("--path", default="src/di0", help="core package to scan")
+    guard.set_defaults(func=_cmd_guard)
 
     validate = sub.add_parser("validate", help="validate SQL (literal or path) against the schema")
     validate.add_argument("sql", help="SQL string or path to a .sql file")

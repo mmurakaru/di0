@@ -21,3 +21,5 @@ jobs:
         run: uv run pytest -q
       - name: Check queries against the schema (drift gate)
         run: uv run di0 check
+      - name: Invariant guard (no hard-coded refs in core)
+        run: uv run di0 guard

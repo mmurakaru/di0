@@ -24,11 +24,12 @@ from di0.registry import (
 
 def _build_engine(profile_path: str) -> Engine:
     profile = load_profile(profile_path)
+    execution_port = build_execution_port(profile)
     return Engine(
         schema_port=build_schema_port(profile),
         dialect_port=build_dialect_port(profile),
-        validation_port=build_validation_port(profile),
-        execution_port=build_execution_port(profile),
+        validation_port=build_validation_port(profile, execution_port),
+        execution_port=execution_port,
     )
 
 

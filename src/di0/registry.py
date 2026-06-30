@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from di0.adapters.dbt_manifest import DbtManifestSchema
 from di0.adapters.drizzle_schema import DrizzleSnapshotSchema
+from di0.adapters.explain_validation import ExplainValidation
 from di0.adapters.metabase_execution import MetabaseExecution
 from di0.adapters.noop_execution import NoopExecution
 from di0.adapters.sqlglot_dialect import SqlglotDialect
@@ -48,9 +49,18 @@ def build_dialect_port(profile: Profile) -> DialectPort:
     return SqlglotDialect(profile.dialect)
 
 
-def build_validation_port(profile: Profile) -> ValidationPort:
+def build_validation_port(
+    profile: Profile, execution_port: ExecutionPort | None = None
+) -> ValidationPort:
     if profile.validation == "sqlglot-offline":
         return SqlglotOfflineValidation(profile.dialect)
+    if profile.validation == "explain":
+        if execution_port is None or not hasattr(execution_port, "run_native"):
+            raise ValueError(
+                "explain validation requires an execution adapter that can run native SQL "
+                "(e.g. execution: metabase)"
+            )
+        return ExplainValidation(execution_port)
     raise ValueError(f"unknown validation tier: {profile.validation}")
 
 

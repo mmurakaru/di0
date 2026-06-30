@@ -11,7 +11,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from di0.core import Engine
+from di0.core import Engine, ValidationFailed
 from di0.profile import DEFAULT_PROFILE_NAME, load_profile
 from di0.registry import (
     build_dialect_port,
@@ -49,6 +49,21 @@ def _cmd_validate(args: argparse.Namespace) -> int:
     return 1
 
 
+def _cmd_query(args: argparse.Namespace) -> int:
+    engine = _build_engine(args.profile)
+    try:
+        result = engine.query(_read_sql(args.sql))
+    except ValidationFailed as failure:
+        for error in failure.result.errors:
+            print(f"INVALID: {error}", file=sys.stderr)
+        return 1
+    if result.columns:
+        print("\t".join(result.columns))
+    for row in result.rows:
+        print("\t".join("" if value is None else str(value) for value in row))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="di0", description=__doc__)
     parser.add_argument(
@@ -61,6 +76,10 @@ def main(argv: list[str] | None = None) -> int:
     validate = sub.add_parser("validate", help="validate SQL (literal or path) against the schema")
     validate.add_argument("sql", help="SQL string or path to a .sql file")
     validate.set_defaults(func=_cmd_validate)
+
+    query = sub.add_parser("query", help="validate then execute SQL, printing rows")
+    query.add_argument("sql", help="SQL string or path to a .sql file")
+    query.set_defaults(func=_cmd_query)
 
     args = parser.parse_args(argv)
     return args.func(args)

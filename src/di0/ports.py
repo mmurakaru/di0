@@ -61,12 +61,24 @@ class ValidationPort(Protocol):
 class ExecutionPort(Protocol):
     """Run validated SQL and return rows.
 
-    `execute` is portable across every adapter. `author` is an optional,
-    BI-tool-specific capability; adapters that cannot author deliverables
-    simply do not implement it (see `supports_authoring`).
+    `execute` is portable across every adapter. Authoring deliverables is an
+    optional, BI-tool-specific capability declared by `supports_authoring` and
+    implemented through the `AuthoringPort` capability below.
     """
 
     def execute(self, sql: str) -> QueryResult: ...
 
     @property
     def supports_authoring(self) -> bool: ...
+
+
+@runtime_checkable
+class AuthoringPort(Protocol):
+    """Optional capability: author a BI artifact from validated, resolved queries.
+
+    The argument is a resolved deliverable (validated SQL plus layout); the return
+    value identifies the created artifact. Only BI execution adapters implement
+    this; row-only adapters do not.
+    """
+
+    def author(self, dashboard: object) -> Deliverable: ...

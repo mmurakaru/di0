@@ -1,0 +1,17 @@
+# A reproducible dashboard built only from validated queries.
+name: ARR Overview
+tabs:
+  - name: Overview
+    cards:
+      - title: ARR by customer
+        query: ../queries/arr_by_customer.sql
+        display: table
+        size_x: 12
+        size_y: 8
+  - name: Trend
+    cards:
+      - title: Monthly ARR
+        query: ../queries/arr_monthly.sql
+        display: line
+        size_x: 24
+        size_y: 8

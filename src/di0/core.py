@@ -10,6 +10,7 @@ physical table, column, or dialect literal.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 from di0.ports import (
     DialectPort,
@@ -45,3 +46,20 @@ class Engine:
             raise ValidationFailed(result)
         composed = self.dialect_port.compose(sql)
         return self.execution_port.execute(composed)
+
+    def validate_paths(self, paths: list[Path]) -> list[tuple[Path, ValidationResult]]:
+        """Validate every SQL file against the schema, resolved once.
+
+        A file that fails to parse or qualify yields an invalid result rather than
+        raising, so a single bad query never hides the rest of the report.
+        """
+        schema = self.schema_port.resolve()
+        results: list[tuple[Path, ValidationResult]] = []
+        for path in paths:
+            try:
+                composed = self.dialect_port.compose(path.read_text())
+                result = self.validation_port.validate(composed, schema)
+            except Exception as error:  # noqa: BLE001 - report, do not abort the run
+                result = ValidationResult(ok=False, errors=(str(error).strip(),))
+            results.append((path, result))
+        return results

@@ -64,6 +64,24 @@ def _cmd_query(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_check(args: argparse.Namespace) -> int:
+    engine = _build_engine(args.profile)
+    paths = sorted(Path(args.queries).glob("**/*.sql"))
+    if not paths:
+        print(f"no .sql files found under {args.queries}")
+        return 0
+    results = engine.validate_paths(paths)
+    failed = 0
+    for path, result in results:
+        if result.ok:
+            print(f"OK    {path}")
+        else:
+            failed += 1
+            print(f"DRIFT {path}: {'; '.join(result.errors)}", file=sys.stderr)
+    print(f"\n{len(results) - failed}/{len(results)} queries valid")
+    return 1 if failed else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="di0", description=__doc__)
     parser.add_argument(
@@ -80,6 +98,10 @@ def main(argv: list[str] | None = None) -> int:
     query = sub.add_parser("query", help="validate then execute SQL, printing rows")
     query.add_argument("sql", help="SQL string or path to a .sql file")
     query.set_defaults(func=_cmd_query)
+
+    check = sub.add_parser("check", help="validate every .sql file against the schema (CI gate)")
+    check.add_argument("--queries", default="queries", help="directory of .sql files")
+    check.set_defaults(func=_cmd_check)
 
     args = parser.parse_args(argv)
     return args.func(args)

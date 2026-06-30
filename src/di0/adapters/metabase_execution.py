@@ -4,8 +4,14 @@ optionally author cards and multi-tab dashboards.
 `execute` returns rows and is the portable capability. `author` creates BI
 artifacts and is the optional, Metabase-specific capability.
 
-The API key is never stored in the profile - it is read from an environment
-variable named by the profile (default `DI0_METABASE_API_KEY`).
+Metabase documents two auth schemes; both are supported and selected by the
+profile (`auth`):
+
+- `api-key` (default, recommended): the `x-api-key` header.
+- `session`: the `X-Metabase-Session` header, for deployments without API keys.
+
+Either way the credential is read from an environment variable named by the
+profile, never stored in the profile.
 """
 
 from __future__ import annotations
@@ -19,6 +25,7 @@ from di0.deliverable import ResolvedDashboard
 from di0.ports import Deliverable, QueryResult
 
 DEFAULT_API_KEY_ENV = "DI0_METABASE_API_KEY"
+DEFAULT_SESSION_ENV = "DI0_METABASE_SESSION"
 
 
 class MetabaseExecution:
@@ -26,12 +33,18 @@ class MetabaseExecution:
         self,
         base_url: str,
         database_id: int,
+        auth: str = "api-key",
         api_key_env: str = DEFAULT_API_KEY_ENV,
+        session_env: str = DEFAULT_SESSION_ENV,
         timeout: float = 30.0,
     ) -> None:
+        if auth not in ("api-key", "session"):
+            raise ValueError(f"unknown metabase auth: {auth!r} (use 'api-key' or 'session')")
         self._base_url = base_url.rstrip("/")
         self._database_id = database_id
+        self._auth = auth
         self._api_key_env = api_key_env
+        self._session_env = session_env
         self._timeout = timeout
 
     def execute(self, sql: str) -> QueryResult:
@@ -120,22 +133,26 @@ class MetabaseExecution:
         return body["id"]
 
     def _request(self, method: str, path: str, payload: dict) -> dict:
+        headers = {"Content-Type": "application/json", **self._auth_header()}
         request = urllib.request.Request(
             f"{self._base_url}{path}",
             data=json.dumps(payload).encode(),
             method=method,
-            headers={"Content-Type": "application/json", "x-api-key": self._api_key()},
+            headers=headers,
         )
         with urllib.request.urlopen(request, timeout=self._timeout) as response:
             return json.loads(response.read())
 
-    def _api_key(self) -> str:
-        key = os.environ.get(self._api_key_env)
-        if not key:
-            raise RuntimeError(
-                f"Metabase API key not found in environment variable {self._api_key_env}"
-            )
-        return key
+    def _auth_header(self) -> dict[str, str]:
+        if self._auth == "session":
+            return {"X-Metabase-Session": self._credential(self._session_env)}
+        return {"x-api-key": self._credential(self._api_key_env)}
+
+    def _credential(self, env_var: str) -> str:
+        value = os.environ.get(env_var)
+        if not value:
+            raise RuntimeError(f"Metabase credential not found in environment variable {env_var}")
+        return value
 
     @staticmethod
     def _error_text(body: dict) -> str:

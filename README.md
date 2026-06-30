@@ -34,6 +34,8 @@ warehouse is configuration, not code.
 | **ValidationPort** | Prove a query before running it | sqlglot offline |
 | **ExecutionPort** | Run validated SQL; optionally author artifacts | (pluggable) |
 
+The available adapters and their options live in [docs/adapters/](docs/adapters/).
+
 Everything warehouse-specific lives in one adapter module and one profile:
 
 ```yaml
@@ -55,24 +57,8 @@ uv run pytest -q
 
 A query over unknown columns fails before it ever reaches a warehouse.
 
-To execute a validated query and return rows, point the profile at an execution
-adapter (e.g. `execution: metabase` with `metabase_url` and
-`metabase_database_id`) and run:
-
-```bash
-export DI0_METABASE_API_KEY=...   # the API key is read from the environment, never the profile
-uv run di0 query "SELECT customer_id, current_arr FROM analytics.dim_customers"
-```
-
-Execution is gated on validation: a query that fails validation never reaches the
-warehouse.
-
-A dashboard is a versioned spec built only from validated queries. With an
-authoring-capable execution adapter:
-
-```bash
-uv run di0 author deliverables/arr_overview.yml
-```
-
-Every query in the spec is validated before any card is created; row-only
-adapters (which cannot author) refuse the request.
+To execute a validated query (`di0 query`) or author a dashboard (`di0 author`),
+point the profile at an execution adapter. Execution is always gated on
+validation, and authoring is an optional capability - a row-only adapter refuses
+it. Adapter-specific options, endpoints, and auth live in
+[docs/adapters/](docs/adapters/).

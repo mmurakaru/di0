@@ -119,3 +119,41 @@ def test_invalid_sql_is_refused_before_execution(metabase_server, monkeypatch):
         _engine(base_url).query("SELECT churn_risk FROM analytics.dim_customers")
 
     assert recorder.request_body is None  # never reached the warehouse
+
+
+def test_api_key_auth_sends_x_api_key_header(metabase_server, monkeypatch):
+    base_url, recorder = metabase_server
+    monkeypatch.setenv("DI0_API_KEY", "key-123")
+    adapter = build_execution_port(
+        Profile(
+            "dbt-manifest", "snowflake", "sqlglot-offline", "metabase",
+            {
+                "metabase_url": base_url,
+                "metabase_database_id": 7,
+                "metabase_auth": "api-key",
+                "metabase_api_key_env": "DI0_API_KEY",
+            },
+        )
+    )
+    adapter.execute("SELECT 1")
+    assert recorder.request_headers.get("x-api-key") == "key-123"
+    assert recorder.request_headers.get("X-Metabase-Session") is None
+
+
+def test_session_auth_sends_session_header(metabase_server, monkeypatch):
+    base_url, recorder = metabase_server
+    monkeypatch.setenv("DI0_SESSION", "sess-abc")
+    adapter = build_execution_port(
+        Profile(
+            "dbt-manifest", "snowflake", "sqlglot-offline", "metabase",
+            {
+                "metabase_url": base_url,
+                "metabase_database_id": 7,
+                "metabase_auth": "session",
+                "metabase_session_env": "DI0_SESSION",
+            },
+        )
+    )
+    adapter.execute("SELECT 1")
+    assert recorder.request_headers.get("X-Metabase-Session") == "sess-abc"
+    assert recorder.request_headers.get("x-api-key") is None

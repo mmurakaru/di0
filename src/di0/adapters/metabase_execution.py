@@ -28,6 +28,16 @@ DEFAULT_API_KEY_ENV = "DI0_METABASE_API_KEY"
 DEFAULT_SESSION_ENV = "DI0_METABASE_SESSION"
 
 
+def _axis_settings(x_label: str, y_label: str) -> dict:
+    """Map readable axis labels onto Metabase visualization settings."""
+    settings: dict = {}
+    if x_label:
+        settings["graph.x_axis.title_text"] = x_label
+    if y_label:
+        settings["graph.y_axis.title_text"] = y_label
+    return settings
+
+
 class MetabaseExecution:
     def __init__(
         self,
@@ -74,6 +84,20 @@ class MetabaseExecution:
     def supports_authoring(self) -> bool:
         return True
 
+    def ensure_collection(self, name: str, parent_id: int | None = None) -> int:
+        """Find a collection by name under a parent, or create it. Returns its id."""
+        for collection in self._get("/api/collection"):
+            if collection.get("name") != name:
+                continue
+            location = (collection.get("location") or "").rstrip("/")
+            under_parent = parent_id is None or location.endswith(f"/{parent_id}")
+            if under_parent:
+                return collection["id"]
+        payload: dict = {"name": name}
+        if parent_id is not None:
+            payload["parent_id"] = parent_id
+        return self._request("POST", "/api/collection", payload)["id"]
+
     def author(self, dashboard: ResolvedDashboard) -> Deliverable:
         tabs: list[dict] = []
         dashcards: list[dict] = []
@@ -83,7 +107,7 @@ class MetabaseExecution:
             tabs.append({"id": tab_id, "name": tab.name})
             row = 0
             for card in tab.cards:
-                card_id = self._create_card(card.title, card.sql, card.display)
+                card_id = self._create_card(card, dashboard.collection_id)
                 card_ids.append(card_id)
                 dashcards.append(
                     {
@@ -98,7 +122,10 @@ class MetabaseExecution:
                 )
                 row += card.size_y
 
-        created = self._request("POST", "/api/dashboard", {"name": dashboard.name})
+        dashboard_payload: dict = {"name": dashboard.name}
+        if dashboard.collection_id is not None:
+            dashboard_payload["collection_id"] = dashboard.collection_id
+        created = self._request("POST", "/api/dashboard", dashboard_payload)
         dashboard_id = created["id"]
         self._request(
             "PUT",
@@ -112,25 +139,26 @@ class MetabaseExecution:
                 "url": f"{self._base_url}/dashboard/{dashboard_id}",
                 "card_ids": card_ids,
                 "tabs": [tab.name for tab in dashboard.tabs],
+                "collection_id": dashboard.collection_id,
             },
         )
 
-    def _create_card(self, name: str, sql: str, display: str) -> int:
-        body = self._request(
-            "POST",
-            "/api/card",
-            {
-                "name": name,
-                "display": display,
-                "visualization_settings": {},
-                "dataset_query": {
-                    "database": self._database_id,
-                    "type": "native",
-                    "native": {"query": sql},
-                },
+    def _create_card(self, card, collection_id: int | None) -> int:
+        payload: dict = {
+            "name": card.title,
+            "display": card.display,
+            "visualization_settings": _axis_settings(card.x_label, card.y_label),
+            "dataset_query": {
+                "database": self._database_id,
+                "type": "native",
+                "native": {"query": card.sql},
             },
-        )
-        return body["id"]
+        }
+        if card.description:
+            payload["description"] = card.description
+        if collection_id is not None:
+            payload["collection_id"] = collection_id
+        return self._request("POST", "/api/card", payload)["id"]
 
     def _request(self, method: str, path: str, payload: dict) -> dict:
         headers = {"Content-Type": "application/json", **self._auth_header()}
@@ -142,6 +170,14 @@ class MetabaseExecution:
         )
         with urllib.request.urlopen(request, timeout=self._timeout) as response:
             return json.loads(response.read())
+
+    def _get(self, path: str) -> list:
+        request = urllib.request.Request(
+            f"{self._base_url}{path}", method="GET", headers=self._auth_header()
+        )
+        with urllib.request.urlopen(request, timeout=self._timeout) as response:
+            body = json.loads(response.read())
+        return body.get("data", body) if isinstance(body, dict) else body
 
     def _auth_header(self) -> dict[str, str]:
         if self._auth == "session":

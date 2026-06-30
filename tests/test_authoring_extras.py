@@ -126,7 +126,7 @@ def test_author_places_in_collection_with_annotations_and_axes(server, monkeypat
     spec_path = tmp_path / "dash.yml"
     spec_path.write_text(
         "name: Revenue\n"
-        "collection_id: 663\n"
+        "collection_id: 42\n"
         "tabs:\n"
         "  - name: Trend\n"
         "    cards:\n"
@@ -141,12 +141,12 @@ def test_author_places_in_collection_with_annotations_and_axes(server, monkeypat
     deliverable = _engine(base_url).author(DashboardSpec.from_file(spec_path), base_dir=tmp_path)
 
     card = recorder.cards[0]
-    assert card["collection_id"] == 663
+    assert card["collection_id"] == 42
     assert card["description"] == "Monthly recurring revenue from subscriptions."
     assert card["visualization_settings"]["graph.x_axis.title_text"] == "Month"
     assert card["visualization_settings"]["graph.y_axis.title_text"] == "ARR (USD)"
-    assert recorder.dashboard["collection_id"] == 663
-    assert deliverable.detail["collection_id"] == 663
+    assert recorder.dashboard["collection_id"] == 42
+    assert deliverable.detail["collection_id"] == 42
 
 
 def test_ensure_collection_creates_under_parent(server, monkeypatch):
@@ -154,22 +154,22 @@ def test_ensure_collection_creates_under_parent(server, monkeypatch):
     monkeypatch.setenv("DI0_TEST_SESSION", "sess")
     adapter = build_execution_port(_profile(base_url))
 
-    new_id = adapter.ensure_collection("growth-tinkering", parent_id=663)
+    new_id = adapter.ensure_collection("quarterly-reviews", parent_id=42)
 
     assert new_id == 777
-    assert recorder.created_collections[0] == {"name": "growth-tinkering", "parent_id": 663}
+    assert recorder.created_collections[0] == {"name": "quarterly-reviews", "parent_id": 42}
 
 
 def test_ensure_collection_reuses_existing(server, monkeypatch):
     base_url, recorder = server
     monkeypatch.setenv("DI0_TEST_SESSION", "sess")
     recorder.collections = [
-        {"id": 999, "name": "growth-tinkering", "location": "/663/"},
-        {"id": 111, "name": "growth-tinkering", "location": "/5/"},  # different parent
+        {"id": 999, "name": "quarterly-reviews", "location": "/42/"},
+        {"id": 111, "name": "quarterly-reviews", "location": "/9/"},  # different parent
     ]
     adapter = build_execution_port(_profile(base_url))
 
-    found = adapter.ensure_collection("growth-tinkering", parent_id=663)
+    found = adapter.ensure_collection("quarterly-reviews", parent_id=42)
 
     assert found == 999
     assert recorder.created_collections == []  # did not create a duplicate

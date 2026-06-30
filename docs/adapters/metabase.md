@@ -62,7 +62,7 @@ card placements.
 
 ```yaml
 name: My dashboard
-collection_id: 663            # place cards + dashboard in this collection (omit = default/root)
+collection_id: 123            # place cards + dashboard in this collection (omit = default/root)
 tabs:
   - name: Overview
     cards:

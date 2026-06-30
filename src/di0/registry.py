@@ -10,6 +10,7 @@ from __future__ import annotations
 from di0.adapters.dbt_manifest import DbtManifestSchema
 from di0.adapters.drizzle_schema import DrizzleSnapshotSchema
 from di0.adapters.explain_validation import ExplainValidation
+from di0.adapters.http_rows_execution import HttpRowsExecution
 from di0.adapters.metabase_execution import MetabaseExecution
 from di0.adapters.noop_execution import NoopExecution
 from di0.adapters.sqlglot_dialect import SqlglotDialect
@@ -78,4 +79,11 @@ def build_execution_port(profile: Profile) -> ExecutionPort:
         api_key_env = profile.options.get("metabase_api_key_env")
         kwargs = {"api_key_env": str(api_key_env)} if api_key_env else {}
         return MetabaseExecution(str(base_url), int(database_id), **kwargs)
+    if profile.execution == "http-rows":
+        base_url = profile.options.get("rows_url")
+        if not base_url:
+            raise ValueError("http-rows execution requires `rows_url` in the profile")
+        api_key_env = profile.options.get("rows_api_key_env")
+        kwargs = {"api_key_env": str(api_key_env)} if api_key_env else {}
+        return HttpRowsExecution(str(base_url), **kwargs)
     raise ValueError(f"unknown execution target: {profile.execution}")

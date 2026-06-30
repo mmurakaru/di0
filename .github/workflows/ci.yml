@@ -19,3 +19,5 @@ jobs:
         run: uv run ruff check .
       - name: Test
         run: uv run pytest -q
+      - name: Check queries against the schema (drift gate)
+        run: uv run di0 check

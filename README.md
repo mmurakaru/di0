@@ -54,3 +54,15 @@ uv run pytest -q
 ```
 
 A query over unknown columns fails before it ever reaches a warehouse.
+
+To execute a validated query and return rows, point the profile at an execution
+adapter (e.g. `execution: metabase` with `metabase_url` and
+`metabase_database_id`) and run:
+
+```bash
+export DI0_METABASE_API_KEY=...   # the API key is read from the environment, never the profile
+uv run di0 query "SELECT customer_id, current_arr FROM analytics.dim_customers"
+```
+
+Execution is gated on validation: a query that fails validation never reaches the
+warehouse.

@@ -8,6 +8,7 @@ they ask the registry for ports and use them abstractly.
 from __future__ import annotations
 
 from di0.adapters.dbt_manifest import DbtManifestSchema
+from di0.adapters.metabase_execution import MetabaseExecution
 from di0.adapters.noop_execution import NoopExecution
 from di0.adapters.sqlglot_dialect import SqlglotDialect
 from di0.adapters.sqlglot_validation import SqlglotOfflineValidation
@@ -37,4 +38,15 @@ def build_validation_port(profile: Profile) -> ValidationPort:
 def build_execution_port(profile: Profile) -> ExecutionPort:
     if profile.execution == "noop":
         return NoopExecution()
+    if profile.execution == "metabase":
+        base_url = profile.options.get("metabase_url")
+        database_id = profile.options.get("metabase_database_id")
+        if not base_url or database_id is None:
+            raise ValueError(
+                "metabase execution requires `metabase_url` and `metabase_database_id` "
+                "in the profile"
+            )
+        api_key_env = profile.options.get("metabase_api_key_env")
+        kwargs = {"api_key_env": str(api_key_env)} if api_key_env else {}
+        return MetabaseExecution(str(base_url), int(database_id), **kwargs)
     raise ValueError(f"unknown execution target: {profile.execution}")

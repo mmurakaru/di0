@@ -66,6 +66,14 @@ def _cmd_query(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_schema(args: argparse.Namespace) -> int:
+    import json
+
+    engine = _build_engine(args.profile)
+    print(json.dumps(engine.schema_port.resolve(), indent=2, sort_keys=True))
+    return 0
+
+
 def _cmd_author(args: argparse.Namespace) -> int:
     engine = _build_engine(args.profile)
     spec_path = Path(args.spec)
@@ -109,6 +117,9 @@ def main(argv: list[str] | None = None) -> int:
         help=f"path to the profile (default: {DEFAULT_PROFILE_NAME})",
     )
     sub = parser.add_subparsers(dest="command", required=True)
+
+    schema = sub.add_parser("schema", help="resolve and print the schema as JSON")
+    schema.set_defaults(func=_cmd_schema)
 
     validate = sub.add_parser("validate", help="validate SQL (literal or path) against the schema")
     validate.add_argument("sql", help="SQL string or path to a .sql file")

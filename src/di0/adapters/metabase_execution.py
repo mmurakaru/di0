@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import urllib.error
 import urllib.request
 
 from di0.deliverable import ResolvedDashboard
@@ -40,6 +41,21 @@ class MetabaseExecution:
             {"database": self._database_id, "type": "native", "native": {"query": sql}},
         )
         return self._to_result(body)
+
+    def run_native(self, sql: str) -> tuple[bool, str | None]:
+        """Run a native statement, reporting success or the warehouse error.
+
+        Used by the EXPLAIN validation tier. A failed query surfaces as an error
+        field or a failed status in the dataset response (or an HTTP error body).
+        """
+        payload = {"database": self._database_id, "type": "native", "native": {"query": sql}}
+        try:
+            body = self._request("POST", "/api/dataset", payload)
+        except urllib.error.HTTPError as error:
+            return False, self._error_text(json.loads(error.read() or b"{}"))
+        if body.get("status") == "failed" or body.get("error"):
+            return False, self._error_text(body)
+        return True, None
 
     @property
     def supports_authoring(self) -> bool:
@@ -120,6 +136,13 @@ class MetabaseExecution:
                 f"Metabase API key not found in environment variable {self._api_key_env}"
             )
         return key
+
+    @staticmethod
+    def _error_text(body: dict) -> str:
+        error = body.get("error")
+        if isinstance(error, dict):
+            return str(error.get("message") or error)
+        return str(error or body.get("status") or "query failed")
 
     @staticmethod
     def _to_result(body: dict) -> QueryResult:

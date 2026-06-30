@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import sqlglot
 
+from di0.adapters._sqlglot import to_sqlglot_dialect
+
 
 class SqlglotDialect:
     def __init__(self, dialect: str) -> None:
-        self._dialect = dialect
+        self._dialect = to_sqlglot_dialect(dialect)
 
     def compose(self, sql: str) -> str:
         # Parse and re-render in the target dialect; this normalizes the SQL and

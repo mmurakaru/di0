@@ -76,8 +76,13 @@ def build_execution_port(profile: Profile) -> ExecutionPort:
                 "metabase execution requires `metabase_url` and `metabase_database_id` "
                 "in the profile"
             )
-        api_key_env = profile.options.get("metabase_api_key_env")
-        kwargs = {"api_key_env": str(api_key_env)} if api_key_env else {}
+        kwargs: dict[str, object] = {}
+        if "metabase_auth" in profile.options:
+            kwargs["auth"] = str(profile.options["metabase_auth"])
+        if "metabase_api_key_env" in profile.options:
+            kwargs["api_key_env"] = str(profile.options["metabase_api_key_env"])
+        if "metabase_session_env" in profile.options:
+            kwargs["session_env"] = str(profile.options["metabase_session_env"])
         return MetabaseExecution(str(base_url), int(database_id), **kwargs)
     if profile.execution == "http-rows":
         base_url = profile.options.get("rows_url")

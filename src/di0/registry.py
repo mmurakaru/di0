@@ -8,6 +8,7 @@ they ask the registry for ports and use them abstractly.
 from __future__ import annotations
 
 from di0.adapters.dbt_manifest import DbtManifestSchema
+from di0.adapters.drizzle_schema import DrizzleSnapshotSchema
 from di0.adapters.metabase_execution import MetabaseExecution
 from di0.adapters.noop_execution import NoopExecution
 from di0.adapters.sqlglot_dialect import SqlglotDialect
@@ -31,6 +32,14 @@ def build_schema_port(profile: Profile) -> SchemaPort:
             str(schema_dir),
             namespace=str(profile.options.get("namespace", "public")),
             information_schema_path=profile.options.get("information_schema_path"),
+        )
+    if profile.schema_source == "drizzle-snapshot":
+        snapshot_path = profile.options.get("snapshot_path")
+        if not snapshot_path:
+            raise ValueError("drizzle-snapshot schema source requires `snapshot_path`")
+        return DrizzleSnapshotSchema(
+            str(snapshot_path),
+            default_namespace=str(profile.options.get("namespace", "public")),
         )
     raise ValueError(f"unknown schema_source: {profile.schema_source}")
 

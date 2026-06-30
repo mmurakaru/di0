@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "catalog.category": {
+      "name": "category",
+      "schema": "catalog",
+      "columns": {
+        "id": { "name": "id", "type": "integer", "primaryKey": true, "notNull": true },
+        "name": { "name": "name", "type": "text", "notNull": true },
+        "deleted_at": { "name": "deleted_at", "type": "timestamp", "notNull": false }
+      }
+    },
+    "catalog.product": {
+      "name": "product",
+      "schema": "catalog",
+      "columns": {
+        "id": { "name": "id", "type": "integer", "primaryKey": true, "notNull": true },
+        "name": { "name": "name", "type": "text", "notNull": true },
+        "price": { "name": "price", "type": "numeric", "notNull": true },
+        "category_id": { "name": "category_id", "type": "integer", "notNull": true },
+        "deleted_at": { "name": "deleted_at", "type": "timestamp", "notNull": false }
+      }
+    }
+  },
+  "schemas": { "catalog": "catalog" }
+}

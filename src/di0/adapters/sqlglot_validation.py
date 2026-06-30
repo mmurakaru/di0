@@ -12,12 +12,13 @@ from sqlglot.errors import OptimizeError, SqlglotError
 from sqlglot.optimizer.qualify import qualify
 from sqlglot.schema import MappingSchema
 
+from di0.adapters._sqlglot import to_sqlglot_dialect
 from di0.ports import Schema, ValidationResult
 
 
 class SqlglotOfflineValidation:
     def __init__(self, dialect: str) -> None:
-        self._dialect = dialect
+        self._dialect = to_sqlglot_dialect(dialect)
 
     def validate(self, sql: str, schema: Schema) -> ValidationResult:
         try:

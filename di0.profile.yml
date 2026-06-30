@@ -1,0 +1,7 @@
+# di0 profile - the only place the warehouse, dialect, and targets are named.
+# Swap the adapters here; the core and skills never change.
+schema_source: dbt-manifest          # resolve schema from a dbt manifest.json
+manifest_path: tests/fixtures/manifest.json
+dialect: snowflake                   # sqlglot dialect target
+validation: sqlglot-offline          # prove queries offline against the schema
+execution: noop                      # resolve/compose/validate only; run nothing

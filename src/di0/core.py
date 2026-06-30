@@ -86,10 +86,17 @@ class Engine:
                         display=card.display,
                         size_x=card.size_x,
                         size_y=card.size_y,
+                        description=card.description,
+                        x_label=card.x_label,
+                        y_label=card.y_label,
                     )
                 )
             resolved_tabs.append(ResolvedTab(name=tab.name, cards=tuple(resolved_cards)))
-        dashboard = ResolvedDashboard(name=spec.name, tabs=tuple(resolved_tabs))
+        dashboard = ResolvedDashboard(
+            name=spec.name,
+            tabs=tuple(resolved_tabs),
+            collection_id=spec.collection_id,
+        )
         return self.execution_port.author(dashboard)
 
     def validate_paths(self, paths: list[Path]) -> list[tuple[Path, ValidationResult]]:

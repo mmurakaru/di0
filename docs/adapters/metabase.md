@@ -58,6 +58,26 @@ Both validate before they touch Metabase. `author` issues `POST /api/card` per
 query, `POST /api/dashboard`, then `PUT /api/dashboard/:id` with the tabs and
 card placements.
 
+### Deliverable spec options
+
+```yaml
+name: My dashboard
+collection_id: 123            # place cards + dashboard in this collection (omit = default/root)
+tabs:
+  - name: Overview
+    cards:
+      - title: Monthly total
+        query: ../queries/monthly.sql
+        display: line
+        description: What this card measures.   # card annotation
+        x_label: Month                          # readable axis labels
+        y_label: Total (USD)
+```
+
+`collection_id` keeps a deliverable out of the shared root and inside a chosen
+collection. To create (or reuse) a collection first, the adapter exposes
+`ensure_collection(name, parent_id)`, which returns the collection id.
+
 ## Live validation
 
 With `validation: explain`, di0 proves each query with `EXPLAIN` over this same

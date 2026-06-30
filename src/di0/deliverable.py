@@ -20,6 +20,9 @@ class CardSpec:
     display: str = "table"
     size_x: int = 12
     size_y: int = 8
+    description: str = ""
+    x_label: str = ""
+    y_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -32,6 +35,7 @@ class TabSpec:
 class DashboardSpec:
     name: str
     tabs: tuple[TabSpec, ...]
+    collection_id: int | None = None
 
     @classmethod
     def from_file(cls, path: str | Path) -> DashboardSpec:
@@ -46,13 +50,21 @@ class DashboardSpec:
                         display=card.get("display", "table"),
                         size_x=int(card.get("size_x", 12)),
                         size_y=int(card.get("size_y", 8)),
+                        description=card.get("description", ""),
+                        x_label=card.get("x_label", ""),
+                        y_label=card.get("y_label", ""),
                     )
                     for card in tab.get("cards", [])
                 ),
             )
             for tab in data.get("tabs", [])
         )
-        return cls(name=data["name"], tabs=tabs)
+        collection_id = data.get("collection_id")
+        return cls(
+            name=data["name"],
+            tabs=tabs,
+            collection_id=int(collection_id) if collection_id is not None else None,
+        )
 
 
 @dataclass(frozen=True)
@@ -62,6 +74,9 @@ class ResolvedCard:
     display: str
     size_x: int
     size_y: int
+    description: str = ""
+    x_label: str = ""
+    y_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -74,3 +89,4 @@ class ResolvedTab:
 class ResolvedDashboard:
     name: str
     tabs: tuple[ResolvedTab, ...] = field(default_factory=tuple)
+    collection_id: int | None = None

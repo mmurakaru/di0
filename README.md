@@ -9,7 +9,8 @@ not a 2am dashboard.
 ## The principle
 
 Hard-coding physical table and column names into application code is the kind of
-coupling Codd's *data independence* was meant to avoid. di0 leans the other way:
+coupling Codd's [*data independence*](https://doi.org/10.1145/362384.362685) was
+meant to avoid. di0 leans the other way:
 the core references a logical schema and resolves the physical details at the edges.
 
 The IP is the validation loop, not any single query:

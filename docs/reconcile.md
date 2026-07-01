@@ -33,6 +33,30 @@ combine: combine.sql                                 # SELECT ... FROM left JOIN
 di0 reconcile reconcile.yml     # prints the combined rows
 ```
 
+## Dependent queries (large sources)
+
+When one source is huge, you don't want to fetch it whole just to join. A query can
+depend on another and pull only the keys it needs: it declares `depends_on` + `keys`,
+and its SQL uses a `{keys}` placeholder that di0 fills with the dependency's distinct
+key values (a SQL IN-list).
+
+```yaml
+queries:
+  - { name: approvals, source: events, query: approvals.sql }         # small: the keys
+  - { name: words, source: warehouse, query: words.sql,               # huge: fetch only those keys
+      depends_on: approvals, keys: segment_id }
+combine: combine.sql
+```
+
+```sql
+-- words.sql : only the segments 'approvals' referenced, not the whole table
+SELECT id AS segment_id, word_count FROM huge_table WHERE id IN ({keys})
+```
+
+Independent queries run first; dependents run once their dependency is available
+(cycles / missing deps are reported). This is how di0 iterates over a large dataset -
+reduce to keys on one side, fetch just those on the other.
+
 ## Scope
 
 `reconcile` produces the cross-source **answer** (rows). Turning that into a *live*

@@ -130,6 +130,32 @@ class Engine:
         return results
 
 
+def _key_list_sql(result: QueryResult, column: str | None) -> str:
+    """Render a dependency column's distinct values as a SQL IN-list of literals."""
+    if not column:
+        raise ValueError("a dependent reconcile query must set `keys`")
+    if column not in result.columns:
+        raise ValueError(f"dependency has no key column {column!r} (has {result.columns})")
+    index = result.columns.index(column)
+    seen: list = []
+    unique: set = set()
+    for row in result.rows:
+        value = row[index]
+        if value is None or value in unique:
+            continue
+        unique.add(value)
+        seen.append(value)
+    if not seen:
+        return "NULL"
+
+    def literal(value: object) -> str:
+        if isinstance(value, (int, float)):
+            return repr(value)
+        return "'" + str(value).replace("'", "''") + "'"
+
+    return ", ".join(literal(value) for value in seen)
+
+
 def reconcile(
     spec: ReconcileSpec,
     base_dir: Path | None,
@@ -138,18 +164,37 @@ def reconcile(
 ) -> QueryResult:
     """Answer a cross-source question: run one validated query per source, then combine.
 
-    Each query is validated and executed against its own source (reduced there);
-    the combine SQL joins the fetched results locally through the CombinePort. The
-    warehouses only fetch rows - the cross-source join never runs in any of them.
+    Independent queries run first; a query with `depends_on` runs after that
+    dependency and has its `{keys}` placeholder filled with the dependency's distinct
+    key values - so a huge source is fetched only for the keys another source needs,
+    not in full. The combine joins the fetched results locally through the CombinePort;
+    the cross-source join never runs in any source warehouse.
     """
     root = Path(base_dir) if base_dir is not None else Path.cwd()
     tables: dict[str, QueryResult] = {}
-    for query in spec.queries:
+    pending = list(spec.queries)
+    for query in pending:
         if query.source not in spec.sources:
             raise ValueError(
                 f"reconcile query {query.name!r} names unknown source {query.source!r}"
             )
-        engine = engine_factory(Profile.from_dict(spec.sources[query.source]))
-        tables[query.name] = engine.query((root / query.query).read_text())
+    made_progress = True
+    while pending and made_progress:
+        made_progress = False
+        for query in list(pending):
+            if query.depends_on and query.depends_on not in tables:
+                continue  # dependency not ready yet
+            sql = (root / query.query).read_text()
+            if query.depends_on:
+                sql = sql.replace("{keys}", _key_list_sql(tables[query.depends_on], query.keys))
+            engine = engine_factory(Profile.from_dict(spec.sources[query.source]))
+            tables[query.name] = engine.query(sql)
+            pending.remove(query)
+            made_progress = True
+    if pending:
+        raise ValueError(
+            "unresolved reconcile dependencies (missing or cyclic): "
+            + ", ".join(q.name for q in pending)
+        )
     combine_sql = (root / spec.combine).read_text()
     return combine_port.combine(tables, combine_sql)

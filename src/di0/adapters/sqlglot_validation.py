@@ -16,6 +16,21 @@ from di0.adapters._sqlglot import to_sqlglot_dialect
 from di0.ports import Schema, ValidationResult
 
 
+def _prune_empty(schema: Schema) -> Schema:
+    """Drop tables (and then namespaces) that have no columns.
+
+    Real manifests contain models with no column-level contract; sqlglot's
+    MappingSchema raises on a zero-column table. Such tables can't be column-checked
+    anyway, so we omit them rather than crash the whole validation.
+    """
+    pruned: Schema = {}
+    for namespace, tables in schema.items():
+        kept = {table: cols for table, cols in tables.items() if cols}
+        if kept:
+            pruned[namespace] = kept
+    return pruned
+
+
 class SqlglotOfflineValidation:
     def __init__(self, dialect: str) -> None:
         self._dialect = to_sqlglot_dialect(dialect)
@@ -26,7 +41,7 @@ class SqlglotOfflineValidation:
         except SqlglotError as error:
             return ValidationResult(ok=False, errors=(f"parse error: {error}",))
 
-        mapping = MappingSchema(schema, dialect=self._dialect)
+        mapping = MappingSchema(_prune_empty(schema), dialect=self._dialect)
         try:
             qualify(
                 expression,

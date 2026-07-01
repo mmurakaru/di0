@@ -99,6 +99,8 @@ class MetabaseExecution:
         return self._request("POST", "/api/collection", payload)["id"]
 
     def author(self, dashboard: ResolvedDashboard) -> Deliverable:
+        if dashboard.replace and dashboard.collection_id is not None:
+            self._archive_existing(dashboard.name, dashboard.collection_id)
         tabs: list[dict] = []
         dashcards: list[dict] = []
         card_ids: list[int] = []
@@ -151,6 +153,23 @@ class MetabaseExecution:
             },
         )
 
+    def _archive_existing(self, name: str, collection_id: int) -> None:
+        """Archive any same-name dashboard in the collection, and its query cards.
+
+        Makes re-authoring idempotent: an iteration replaces the prior deliverable
+        instead of leaving duplicates behind.
+        """
+        items = self._get(f"/api/collection/{collection_id}/items?models=dashboard")
+        for item in items:
+            if item.get("name") != name or item.get("archived"):
+                continue
+            dashboard = self._get_one(f"/api/dashboard/{item['id']}")
+            for dashcard in dashboard.get("dashcards") or dashboard.get("ordered_cards") or []:
+                card_id = dashcard.get("card_id")
+                if card_id:
+                    self._request("PUT", f"/api/card/{card_id}", {"archived": True})
+            self._request("PUT", f"/api/dashboard/{item['id']}", {"archived": True})
+
     def _create_card(self, card, collection_id: int | None) -> int:
         # Axis-label shorthands first, then raw viz pass-through wins on conflict.
         visualization_settings = {**_axis_settings(card.x_label, card.y_label), **card.viz}
@@ -182,12 +201,15 @@ class MetabaseExecution:
             return json.loads(response.read())
 
     def _get(self, path: str) -> list:
+        body = self._get_one(path)
+        return body.get("data", body) if isinstance(body, dict) else body
+
+    def _get_one(self, path: str) -> dict:
         request = urllib.request.Request(
             f"{self._base_url}{path}", method="GET", headers=self._auth_header()
         )
         with urllib.request.urlopen(request, timeout=self._timeout) as response:
-            body = json.loads(response.read())
-        return body.get("data", body) if isinstance(body, dict) else body
+            return json.loads(response.read())
 
     def _auth_header(self) -> dict[str, str]:
         if self._auth == "session":

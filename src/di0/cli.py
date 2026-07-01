@@ -92,9 +92,13 @@ def _cmd_schema(args: argparse.Namespace) -> int:
 
 
 def _cmd_author(args: argparse.Namespace) -> int:
+    import dataclasses
+
     engine = _build_engine(args.profile)
     spec_path = Path(args.spec)
     spec = DashboardSpec.from_file(spec_path)
+    if args.replace:
+        spec = dataclasses.replace(spec, replace=True)
     try:
         deliverable = engine.author(spec, base_dir=spec_path.parent)
     except ValidationFailed as failure:
@@ -156,6 +160,11 @@ def main(argv: list[str] | None = None) -> int:
 
     author = sub.add_parser("author", help="author a dashboard from a deliverable spec")
     author.add_argument("spec", help="path to a dashboard spec (.yml)")
+    author.add_argument(
+        "--replace",
+        action="store_true",
+        help="archive an existing same-name dashboard in the collection first",
+    )
     author.set_defaults(func=_cmd_author)
 
     args = parser.parse_args(argv)

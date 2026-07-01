@@ -96,6 +96,9 @@ tabs:
 - **`row`/`col`** place a card on the grid explicitly; omit to auto-stack.
 - `collection_id` keeps a deliverable out of the shared root. To create (or reuse) a
   collection first, the adapter exposes `ensure_collection(name, parent_id)`.
+- **`replace: true`** (or `di0 author --replace`) makes authoring idempotent: it
+  archives an existing same-name dashboard in the collection (and its query cards)
+  before authoring, so re-runs replace rather than duplicate.
 
 ## Live validation
 

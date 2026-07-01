@@ -34,6 +34,9 @@ class _Recorder:
         self.created_collections: list[dict] = []
         self.collections: list[dict] = []  # what GET /api/collection returns
         self.layout: dict | None = None  # the PUT /api/dashboard/:id body
+        self.collection_items: list[dict] = []  # GET /api/collection/:id/items
+        self.existing_dashboard: dict = {}  # GET /api/dashboard/:id (for replace)
+        self.archived: list[tuple] = []  # (path, body) of archive PUTs
 
 
 def _make_server(recorder: _Recorder) -> HTTPServer:
@@ -53,7 +56,11 @@ def _make_server(recorder: _Recorder) -> HTTPServer:
             self.wfile.write(payload)
 
         def do_GET(self):  # noqa: N802
-            if self.path == "/api/collection":
+            if "/items" in self.path:
+                self._send(recorder.collection_items)
+            elif self.path.startswith("/api/dashboard/"):
+                self._send(recorder.existing_dashboard)
+            elif self.path == "/api/collection":
                 self._send(recorder.collections)
             else:
                 self._send([])
@@ -73,7 +80,11 @@ def _make_server(recorder: _Recorder) -> HTTPServer:
                 self._send({})
 
         def do_PUT(self):  # noqa: N802
-            recorder.layout = self._body()
+            body = self._body()
+            if "archived" in body:
+                recorder.archived.append((self.path, body))
+            else:
+                recorder.layout = body
             self._send({"id": 42})
 
     return HTTPServer(("127.0.0.1", 0), Handler)
@@ -186,6 +197,40 @@ def test_text_card_is_virtual_and_grid_and_viz_passthrough(server, monkeypatch, 
     query_dc = next(dc for dc in dashcards if dc.get("card_id") is not None)
     assert "Executive Brief" in text_dc["visualization_settings"]["text"]
     assert (query_dc["row"], query_dc["col"], query_dc["size_x"]) == (2, 0, 6)
+
+
+def test_replace_archives_existing_same_name_dashboard_and_cards(server, monkeypatch, tmp_path):
+    base_url, recorder = server
+    monkeypatch.setenv("DI0_TEST_SESSION", "sess")
+    recorder.collection_items = [
+        {"id": 500, "name": "Revenue", "model": "dashboard"},
+        {"id": 501, "name": "Something else", "model": "dashboard"},
+    ]
+    recorder.existing_dashboard = {
+        "id": 500,
+        "dashcards": [{"card_id": 901}, {"card_id": 902}, {"card_id": None}],
+    }
+    (tmp_path / "q.sql").write_text("SELECT customer_id FROM analytics.dim_customers")
+    spec_path = tmp_path / "dash.yml"
+    spec_path.write_text(
+        "name: Revenue\n"
+        "collection_id: 42\n"
+        "replace: true\n"
+        "tabs:\n"
+        "  - name: T\n"
+        "    cards:\n"
+        "      - title: c\n"
+        "        query: q.sql\n"
+    )
+
+    _engine(base_url).author(DashboardSpec.from_file(spec_path), base_dir=tmp_path)
+
+    archived_paths = [p for p, _ in recorder.archived]
+    assert "/api/card/901" in archived_paths
+    assert "/api/card/902" in archived_paths  # its query cards archived
+    assert "/api/dashboard/500" in archived_paths  # the same-name dashboard archived
+    assert all("501" not in p for p in archived_paths)  # the other dashboard untouched
+    assert all(body == {"archived": True} for _, body in recorder.archived)
 
 
 def test_ensure_collection_creates_under_parent(server, monkeypatch):

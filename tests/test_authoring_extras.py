@@ -196,7 +196,27 @@ def test_text_card_is_virtual_and_grid_and_viz_passthrough(server, monkeypatch, 
     text_dc = next(dc for dc in dashcards if dc.get("card_id") is None)
     query_dc = next(dc for dc in dashcards if dc.get("card_id") is not None)
     assert "Executive Brief" in text_dc["visualization_settings"]["text"]
+    # Metabase renders a text card only with the virtual_card scaffold.
+    assert text_dc["visualization_settings"]["virtual_card"]["display"] == "text"
     assert (query_dc["row"], query_dc["col"], query_dc["size_x"]) == (2, 0, 6)
+
+
+def test_text_card_heading_display(server, monkeypatch, tmp_path):
+    base_url, recorder = server
+    monkeypatch.setenv("DI0_TEST_SESSION", "sess")
+    spec_path = tmp_path / "dash.yml"
+    spec_path.write_text(
+        "name: H\n"
+        "tabs:\n"
+        "  - name: T\n"
+        "    cards:\n"
+        "      - text: Section title\n"
+        "        display: heading\n"
+    )
+    _engine(base_url).author(DashboardSpec.from_file(spec_path), base_dir=tmp_path)
+    dc = recorder.layout["dashcards"][0]
+    assert dc["visualization_settings"]["virtual_card"]["display"] == "heading"
+    assert dc["visualization_settings"]["text"] == "Section title"
 
 
 def test_replace_archives_existing_same_name_dashboard_and_cards(server, monkeypatch, tmp_path):

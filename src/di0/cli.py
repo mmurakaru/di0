@@ -8,6 +8,8 @@ profile passed in with --profile.
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -17,6 +19,19 @@ from di0.deliverable import DashboardSpec
 from di0.profile import DEFAULT_PROFILE_NAME, load_profile
 from di0.reconcile import ReconcileSpec
 from di0.registry import build_combine_port, build_engine
+
+# Your private content (queries, profiles, specs) lives in a workspace directory,
+# gitignored so nothing private is ever committed. Default `./workspace`; override
+# with DI0_WORKSPACE. Scaffold it from the committed `examples/` template via `di0 init`.
+EXAMPLES_DIR = "examples"
+
+
+def _workspace() -> Path:
+    return Path(os.environ.get("DI0_WORKSPACE", "workspace"))
+
+
+def _default_profile() -> str:
+    return str(_workspace() / DEFAULT_PROFILE_NAME)
 
 
 def _build_engine(profile_path: str) -> Engine:
@@ -102,6 +117,26 @@ def _cmd_author(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_init(args: argparse.Namespace) -> int:
+    workspace = _workspace()
+    template = Path(args.template)
+    if template.is_dir():
+        shutil.copytree(template, workspace, dirs_exist_ok=True)
+        made = f"scaffolded {workspace}/ from {template}/"
+    else:
+        for sub in ("queries", "deliverables", "reconcile", "context"):
+            (workspace / sub).mkdir(parents=True, exist_ok=True)
+        made = f"created empty {workspace}/ (no {template}/ template found)"
+    # Only gitignore an in-repo workspace; an external (absolute) one needs no entry.
+    gitignore = Path(".gitignore")
+    entry = f"/{workspace}/"
+    if not workspace.is_absolute() and gitignore.exists() and entry not in gitignore.read_text():
+        with gitignore.open("a") as handle:
+            handle.write(f"\n{entry}\n")
+    print(f"{made}. Drop your queries/profiles/specs there; it is gitignored.")
+    return 0
+
+
 def _cmd_reconcile(args: argparse.Namespace) -> int:
     spec_path = Path(args.spec)
     spec = ReconcileSpec.from_file(spec_path)
@@ -135,10 +170,14 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="di0", description=__doc__)
     parser.add_argument(
         "--profile",
-        default=DEFAULT_PROFILE_NAME,
-        help=f"path to the profile (default: {DEFAULT_PROFILE_NAME})",
+        default=_default_profile(),
+        help=f"path to the profile (default: {_default_profile()})",
     )
     sub = parser.add_subparsers(dest="command", required=True)
+
+    init = sub.add_parser("init", help="scaffold a gitignored workspace/ from examples/")
+    init.add_argument("--template", default=EXAMPLES_DIR, help="template dir to copy")
+    init.set_defaults(func=_cmd_init)
 
     schema = sub.add_parser("schema", help="resolve and print the schema as JSON")
     schema.set_defaults(func=_cmd_schema)
@@ -156,7 +195,11 @@ def main(argv: list[str] | None = None) -> int:
     query.set_defaults(func=_cmd_query)
 
     check = sub.add_parser("check", help="validate every .sql file against the schema (CI gate)")
-    check.add_argument("--queries", default="queries", help="directory of .sql files")
+    check.add_argument(
+        "--queries",
+        default=str(_workspace() / "queries"),
+        help="directory of .sql files",
+    )
     check.set_defaults(func=_cmd_check)
 
     reconcile = sub.add_parser("reconcile", help="run a cross-source reconcile spec, printing rows")

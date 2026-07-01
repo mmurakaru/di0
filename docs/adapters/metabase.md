@@ -52,7 +52,7 @@ API key where available.
 
 ```bash
 di0 query  "<sql>"                   # validate, then execute and print rows
-di0 author deliverables/<spec>.yml   # build a multi-tab dashboard from validated queries
+di0 author workspace/deliverables/<spec>.yml   # build a multi-tab dashboard from validated queries
 ```
 
 Both validate before they touch Metabase. `author` issues `POST /api/card` per

@@ -42,15 +42,15 @@ key values (a SQL IN-list).
 
 ```yaml
 queries:
-  - { name: approvals, source: events, query: approvals.sql }         # small: the keys
-  - { name: words, source: warehouse, query: words.sql,               # huge: fetch only those keys
-      depends_on: approvals, keys: segment_id }
+  - { name: active, source: events, query: active.sql }            # small: the keys
+  - { name: revenue, source: warehouse, query: revenue.sql,        # huge: fetch only those keys
+      depends_on: active, keys: customer_id }
 combine: combine.sql
 ```
 
 ```sql
--- words.sql : only the segments 'approvals' referenced, not the whole table
-SELECT id AS segment_id, word_count FROM huge_table WHERE id IN ({keys})
+-- revenue.sql : only the customers 'active' referenced, not the whole table
+SELECT customer_id, amount FROM huge_fact WHERE customer_id IN ({keys})
 ```
 
 Independent queries run first; dependents run once their dependency is available
@@ -62,8 +62,8 @@ the dependent query - di0 injects the keys in batches of `N` and concatenates th
 results:
 
 ```yaml
-  - { name: words, source: warehouse, query: words.sql,
-      depends_on: approvals, keys: segment_id, chunk: 1000 }
+  - { name: revenue, source: warehouse, query: revenue.sql,
+      depends_on: active, keys: customer_id, chunk: 1000 }
 ```
 
 ## Scope

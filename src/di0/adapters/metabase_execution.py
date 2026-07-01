@@ -144,16 +144,18 @@ class MetabaseExecution:
                 "refusing to author into the shared root: set a collection "
                 "(spec `collection_id` or profile `metabase_collection`)"
             )
-        # Replace = update in place: reuse a same-name dashboard's id (and its tab
-        # ids, matched by name) so the dashboard URL stays stable across rebuilds.
-        # After the new layout is PUT, the old saved cards it used to point at are
-        # left unreferenced, so we archive them to keep the collection clean.
+        # Replace = update in place: reuse a same-name dashboard's id, its tab ids
+        # (matched by name), and its cards' ids (matched by title) so the dashboard
+        # URL, tab anchors, and card-level references stay stable across rebuilds.
+        # Cards no longer referenced after the rebuild are archived (see below).
         existing = None
         if dashboard.replace:
             existing = self._find_existing(dashboard.name, parent_collection)
         existing_tab_ids = (
             {t.get("name"): t.get("id") for t in (existing.get("tabs") or [])} if existing else {}
         )
+        existing_card_ids = self._existing_card_ids(existing)
+        used_card_ids: set[int] = set()
         tabs: list[dict] = []
         dashcards: list[dict] = []
         card_ids: list[int] = []
@@ -190,8 +192,11 @@ class MetabaseExecution:
                         **card.viz,
                     }
                 else:
-                    card_id = self._create_card(card, card_collection)
+                    card_id = self._write_card(
+                        card, card_collection, existing_card_ids.get(card.title)
+                    )
                     card_ids.append(card_id)
+                    used_card_ids.add(card_id)
                     dashcard["card_id"] = card_id
                 dashcards.append(dashcard)
                 # Auto-stack only advances when placement is implicit.
@@ -212,7 +217,7 @@ class MetabaseExecution:
             {"tabs": tabs, "dashcards": dashcards},
         )
         if existing:
-            self._archive_cards(existing)
+            self._archive_cards(existing, keep=used_card_ids)
         return Deliverable(
             kind="dashboard",
             identifier=str(dashboard_id),
@@ -236,14 +241,32 @@ class MetabaseExecution:
                 return self._get_one(f"/api/dashboard/{item['id']}")
         return None
 
-    def _archive_cards(self, dashboard: dict) -> None:
-        """Archive a dashboard's prior query cards, orphaned once its layout is replaced."""
+    def _existing_card_ids(self, dashboard: dict | None) -> dict[str, int]:
+        """Map a dashboard's current query-card titles to their ids, for in-place reuse.
+
+        Metabase nests each card under its dashcard, so the title -> id map lets a
+        rebuild update matching cards in place (stable card ids) rather than churn.
+        """
+        if not dashboard:
+            return {}
+        mapping: dict[str, int] = {}
         for dashcard in dashboard.get("dashcards") or dashboard.get("ordered_cards") or []:
             card_id = dashcard.get("card_id")
-            if card_id:
+            name = (dashcard.get("card") or {}).get("name")
+            if card_id and name:
+                mapping[name] = card_id
+        return mapping
+
+    def _archive_cards(self, dashboard: dict, keep: set[int] | None = None) -> None:
+        """Archive the dashboard's prior query cards that this run did not reuse."""
+        keep = keep or set()
+        for dashcard in dashboard.get("dashcards") or dashboard.get("ordered_cards") or []:
+            card_id = dashcard.get("card_id")
+            if card_id and card_id not in keep:
                 self._request("PUT", f"/api/card/{card_id}", {"archived": True})
 
-    def _create_card(self, card, collection_id: int | None) -> int:
+    def _write_card(self, card, collection_id: int | None, card_id: int | None = None) -> int:
+        """Create a card, or update the given one in place (reusing its id)."""
         # Axis-label shorthands first, then raw viz pass-through wins on conflict.
         visualization_settings = {**_axis_settings(card.x_label, card.y_label), **card.viz}
         payload: dict = {
@@ -260,6 +283,8 @@ class MetabaseExecution:
             payload["description"] = card.description
         if collection_id is not None:
             payload["collection_id"] = collection_id
+        if card_id is not None:
+            return self._request("PUT", f"/api/card/{card_id}", payload)["id"]
         return self._request("POST", "/api/card", payload)["id"]
 
     def _request(self, method: str, path: str, payload: dict) -> dict:

@@ -104,6 +104,7 @@ class Engine:
             tabs=tuple(resolved_tabs),
             collection_id=spec.collection_id,
             replace=spec.replace,
+            organize_by_tab=spec.organize_by_tab,
         )
         return self.execution_port.author(dashboard)
 

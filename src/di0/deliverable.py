@@ -63,6 +63,7 @@ class DashboardSpec:
     tabs: tuple[TabSpec, ...]
     collection_id: int | None = None
     replace: bool = False  # archive an existing same-name dashboard first
+    organize_by_tab: bool = False  # file each tab's cards into a per-tab sub-collection
 
     @classmethod
     def from_file(cls, path: str | Path) -> DashboardSpec:
@@ -80,6 +81,7 @@ class DashboardSpec:
             tabs=tabs,
             collection_id=int(collection_id) if collection_id is not None else None,
             replace=bool(data.get("replace", False)),
+            organize_by_tab=bool(data.get("organize_by_tab", False)),
         )
 
 
@@ -115,3 +117,4 @@ class ResolvedDashboard:
     tabs: tuple[ResolvedTab, ...] = field(default_factory=tuple)
     collection_id: int | None = None
     replace: bool = False
+    organize_by_tab: bool = False

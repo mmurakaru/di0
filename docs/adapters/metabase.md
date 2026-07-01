@@ -99,6 +99,9 @@ tabs:
 - **`replace: true`** (or `di0 author --replace`) makes authoring idempotent: it
   archives an existing same-name dashboard in the collection (and its query cards)
   before authoring, so re-runs replace rather than duplicate.
+- **`organize_by_tab: true`** files each tab's cards into a sub-collection named
+  after the tab (created under `collection_id`), keeping the collection navigable;
+  the dashboard itself stays in the parent collection.
 
 ## Live validation
 

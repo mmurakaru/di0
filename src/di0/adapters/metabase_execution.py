@@ -144,13 +144,23 @@ class MetabaseExecution:
                 "refusing to author into the shared root: set a collection "
                 "(spec `collection_id` or profile `metabase_collection`)"
             )
+        # Replace = update in place: reuse a same-name dashboard's id (and its tab
+        # ids, matched by name) so the dashboard URL stays stable across rebuilds.
+        # After the new layout is PUT, the old saved cards it used to point at are
+        # left unreferenced, so we archive them to keep the collection clean.
+        existing = None
         if dashboard.replace:
-            self._archive_existing(dashboard.name, parent_collection)
+            existing = self._find_existing(dashboard.name, parent_collection)
+        existing_tab_ids = (
+            {t.get("name"): t.get("id") for t in (existing.get("tabs") or [])} if existing else {}
+        )
         tabs: list[dict] = []
         dashcards: list[dict] = []
         card_ids: list[int] = []
         for tab_index, tab in enumerate(dashboard.tabs):
-            tab_id = -(tab_index + 1)
+            tab_id = existing_tab_ids.get(tab.name)
+            if tab_id is None:
+                tab_id = -(tab_index + 1)
             tabs.append({"id": tab_id, "name": tab.name})
             # Optionally file this tab's cards into a per-tab sub-collection so the
             # collection stays navigable; the dashboard stays in the parent.
@@ -188,15 +198,21 @@ class MetabaseExecution:
                 if card.row is None:
                     auto_row = row + card.size_y
 
-        created = self._request(
-            "POST", "/api/dashboard", {"name": dashboard.name, "collection_id": parent_collection}
-        )
-        dashboard_id = created["id"]
+        if existing:
+            dashboard_id = existing["id"]
+        else:
+            dashboard_id = self._request(
+                "POST",
+                "/api/dashboard",
+                {"name": dashboard.name, "collection_id": parent_collection},
+            )["id"]
         self._request(
             "PUT",
             f"/api/dashboard/{dashboard_id}",
             {"tabs": tabs, "dashcards": dashcards},
         )
+        if existing:
+            self._archive_cards(existing)
         return Deliverable(
             kind="dashboard",
             identifier=str(dashboard_id),
@@ -208,22 +224,24 @@ class MetabaseExecution:
             },
         )
 
-    def _archive_existing(self, name: str, collection_id: int) -> None:
-        """Archive any same-name dashboard in the collection, and its query cards.
+    def _find_existing(self, name: str, collection_id: int) -> dict | None:
+        """Return the full same-name (non-archived) dashboard in the collection, or None.
 
-        Makes re-authoring idempotent: an iteration replaces the prior deliverable
-        instead of leaving duplicates behind.
+        Lets an iteration update the prior deliverable in place - reusing its id so
+        the dashboard URL is stable - instead of archiving and recreating it.
         """
         items = self._get(f"/api/collection/{collection_id}/items?models=dashboard")
         for item in items:
-            if item.get("name") != name or item.get("archived"):
-                continue
-            dashboard = self._get_one(f"/api/dashboard/{item['id']}")
-            for dashcard in dashboard.get("dashcards") or dashboard.get("ordered_cards") or []:
-                card_id = dashcard.get("card_id")
-                if card_id:
-                    self._request("PUT", f"/api/card/{card_id}", {"archived": True})
-            self._request("PUT", f"/api/dashboard/{item['id']}", {"archived": True})
+            if item.get("name") == name and not item.get("archived"):
+                return self._get_one(f"/api/dashboard/{item['id']}")
+        return None
+
+    def _archive_cards(self, dashboard: dict) -> None:
+        """Archive a dashboard's prior query cards, orphaned once its layout is replaced."""
+        for dashcard in dashboard.get("dashcards") or dashboard.get("ordered_cards") or []:
+            card_id = dashcard.get("card_id")
+            if card_id:
+                self._request("PUT", f"/api/card/{card_id}", {"archived": True})
 
     def _create_card(self, card, collection_id: int | None) -> int:
         # Axis-label shorthands first, then raw viz pass-through wins on conflict.

@@ -120,9 +120,15 @@ class MetabaseExecution:
                     "size_y": card.size_y,
                 }
                 if card.is_text:
-                    # Virtual text card: no /api/card, markdown lives on the dashcard.
+                    # Virtual text card: no /api/card. Metabase needs a virtual_card
+                    # scaffold ('text' body or 'heading') alongside the markdown.
+                    kind = card.display if card.display in ("text", "heading") else "text"
                     dashcard["card_id"] = None
-                    dashcard["visualization_settings"] = {"text": card.text, **card.viz}
+                    dashcard["visualization_settings"] = {
+                        "virtual_card": {"display": kind},
+                        "text": card.text,
+                        **card.viz,
+                    }
                 else:
                     card_id = self._create_card(card, dashboard.collection_id)
                     card_ids.append(card_id)

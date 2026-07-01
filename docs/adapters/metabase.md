@@ -15,6 +15,7 @@ metabase_database_id: 7              # the database's id in Metabase
 metabase_auth: api-key               # api-key (default) | session
 metabase_api_key_env: DI0_METABASE_API_KEY   # env var holding the API key
 # metabase_session_env: DI0_METABASE_SESSION # env var holding a session token (auth: session)
+# metabase_collection: 123           # default collection for authored deliverables
 ```
 
 The credential is always read from an environment variable, never stored in the
@@ -96,6 +97,9 @@ tabs:
 - **`row`/`col`** place a card on the grid explicitly; omit to auto-stack.
 - `collection_id` keeps a deliverable out of the shared root. To create (or reuse) a
   collection first, the adapter exposes `ensure_collection(name, parent_id)`.
+- **Safe default:** authoring resolves the collection as spec `collection_id` -> profile
+  `metabase_collection` -> else it **refuses** (never authors into the shared root). Set
+  `metabase_collection` once in your profile so deliverables land in your space by default.
 - **`replace: true`** (or `di0 author --replace`) makes authoring idempotent: it
   archives an existing same-name dashboard in the collection (and its query cards)
   before authoring, so re-runs replace rather than duplicate.

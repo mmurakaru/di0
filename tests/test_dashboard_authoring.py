@@ -118,6 +118,7 @@ def test_authors_multi_tab_dashboard(metabase_server, monkeypatch, tmp_path):
     spec_path = tmp_path / "dash.yml"
     spec_path.write_text(
         "name: ARR Overview\n"
+        "collection_id: 42\n"
         "tabs:\n"
         "  - name: Overview\n"
         "    cards:\n"
@@ -135,7 +136,7 @@ def test_authors_multi_tab_dashboard(metabase_server, monkeypatch, tmp_path):
     assert deliverable.kind == "dashboard"
     assert deliverable.identifier == "42"
     assert len(recorder.cards) == 2  # one card per query
-    assert recorder.dashboard == {"name": "ARR Overview"}
+    assert recorder.dashboard == {"name": "ARR Overview", "collection_id": 42}
     # two tabs declared, each with its card pinned to the right tab
     assert [tab["name"] for tab in recorder.layout["tabs"]] == ["Overview", "Trend"]
     tab_ids = {dc["dashboard_tab_id"] for dc in recorder.layout["dashcards"]}

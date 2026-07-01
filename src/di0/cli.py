@@ -124,7 +124,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
         shutil.copytree(template, workspace, dirs_exist_ok=True)
         made = f"scaffolded {workspace}/ from {template}/"
     else:
-        for sub in ("queries", "deliverables", "reconcile", "context"):
+        for sub in ("queries", "context"):
             (workspace / sub).mkdir(parents=True, exist_ok=True)
         made = f"created empty {workspace}/ (no {template}/ template found)"
     # Only gitignore an in-repo workspace; an external (absolute) one needs no entry.
@@ -150,7 +150,12 @@ def _cmd_reconcile(args: argparse.Namespace) -> int:
 
 def _cmd_check(args: argparse.Namespace) -> int:
     engine = _build_engine(args.profile)
-    paths = sorted(Path(args.queries).glob("**/*.sql"))
+    # `_*.sql` and `combine.sql` run against the local combine stage, not a source.
+    paths = sorted(
+        path
+        for path in Path(args.queries).glob("**/*.sql")
+        if not path.name.startswith("_") and path.stem != "combine"
+    )
     if not paths:
         print(f"no .sql files found under {args.queries}")
         return 0
@@ -198,7 +203,7 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument(
         "--queries",
         default=str(_workspace() / "queries"),
-        help="directory of .sql files",
+        help="directory scanned recursively for .sql files (skips _*.sql and combine.sql)",
     )
     check.set_defaults(func=_cmd_check)
 

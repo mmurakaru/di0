@@ -24,5 +24,4 @@ def test_init_creates_empty_workspace_without_template(tmp_path, monkeypatch):
 
     assert cli.main(["init", "--template", str(tmp_path / "missing")]) == 0
     assert (workspace / "queries").is_dir()
-    assert (workspace / "deliverables").is_dir()
-    assert (workspace / "reconcile").is_dir()
+    assert (workspace / "context").is_dir()

@@ -130,12 +130,11 @@ class Engine:
         return results
 
 
-def _key_list_sql(result: QueryResult, column: str | None) -> str:
-    """Render a dependency column's distinct values as a SQL IN-list of literals."""
+def _distinct_keys(result: QueryResult, column: str | None) -> list:
+    """Distinct, non-null values of a dependency column (case-insensitive match)."""
     if not column:
         raise ValueError("a dependent reconcile query must set `keys`")
-    # Column casing varies by source (Snowflake upper-cases, Postgres lower-cases),
-    # so match the key column case-insensitively.
+    # Column casing varies by source (Snowflake upper-cases, Postgres lower-cases).
     by_lower = {c.lower(): c for c in result.columns}
     actual = by_lower.get(column.lower())
     if actual is None:
@@ -149,7 +148,12 @@ def _key_list_sql(result: QueryResult, column: str | None) -> str:
             continue
         unique.add(value)
         seen.append(value)
-    if not seen:
+    return seen
+
+
+def _in_list(values: list) -> str:
+    """A batch of key values as a SQL IN-list of literals ('NULL' when empty)."""
+    if not values:
         return "NULL"
 
     def literal(value: object) -> str:
@@ -157,7 +161,26 @@ def _key_list_sql(result: QueryResult, column: str | None) -> str:
             return repr(value)
         return "'" + str(value).replace("'", "''") + "'"
 
-    return ", ".join(literal(value) for value in seen)
+    return ", ".join(literal(value) for value in values)
+
+
+def _concat(results: list[QueryResult]) -> QueryResult:
+    columns: tuple = ()
+    rows: list = []
+    for result in results:
+        if result.columns:
+            columns = result.columns
+        rows.extend(result.rows)
+    return QueryResult(columns=columns, rows=tuple(rows))
+
+
+def _run_query(engine: Engine, template: str, query, keys: list) -> QueryResult:
+    """Run a query, injecting keys - in chunks when a key set is too large for one IN-list."""
+    if not query.depends_on:
+        return engine.query(template)
+    size = query.chunk if query.chunk and query.chunk > 0 else len(keys) or 1
+    batches = [keys[i : i + size] for i in range(0, len(keys), size)] or [[]]
+    return _concat([engine.query(template.replace("{keys}", _in_list(batch))) for batch in batches])
 
 
 def reconcile(
@@ -188,11 +211,10 @@ def reconcile(
         for query in list(pending):
             if query.depends_on and query.depends_on not in tables:
                 continue  # dependency not ready yet
-            sql = (root / query.query).read_text()
-            if query.depends_on:
-                sql = sql.replace("{keys}", _key_list_sql(tables[query.depends_on], query.keys))
+            template = (root / query.query).read_text()
+            keys = _distinct_keys(tables[query.depends_on], query.keys) if query.depends_on else []
             engine = engine_factory(Profile.from_dict(spec.sources[query.source]))
-            tables[query.name] = engine.query(sql)
+            tables[query.name] = _run_query(engine, template, query, keys)
             pending.remove(query)
             made_progress = True
     if pending:

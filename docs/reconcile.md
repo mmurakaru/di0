@@ -57,6 +57,15 @@ Independent queries run first; dependents run once their dependency is available
 (cycles / missing deps are reported). This is how di0 iterates over a large dataset -
 reduce to keys on one side, fetch just those on the other.
 
+For very large key sets that exceed a warehouse's IN-list limit, add `chunk: N` to
+the dependent query - di0 injects the keys in batches of `N` and concatenates the
+results:
+
+```yaml
+  - { name: words, source: warehouse, query: words.sql,
+      depends_on: approvals, keys: segment_id, chunk: 1000 }
+```
+
 ## Scope
 
 `reconcile` produces the cross-source **answer** (rows). Turning that into a *live*

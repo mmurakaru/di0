@@ -37,20 +37,18 @@ def _make_server() -> HTTPServer:
             pass
 
         def do_POST(self):  # noqa: N802
-            if self.path == "/api/dataset":  # Metabase shape
-                payload = {
-                    "data": {
-                        "cols": [{"name": c} for c in COLUMNS],
-                        "rows": ROWS,
-                    }
-                }
+            if self.path == "/api/dataset/csv":  # Metabase execute() -> CSV export
+                lines = [",".join(COLUMNS)] + [",".join(str(v) for v in r) for r in ROWS]
+                encoded = ("\n".join(lines) + "\n").encode()
+                ctype = "text/csv"
             elif self.path == "/rows":  # http-rows shape
-                payload = {"columns": COLUMNS, "rows": ROWS}
+                encoded = json.dumps({"columns": COLUMNS, "rows": ROWS}).encode()
+                ctype = "application/json"
             else:
-                payload = {}
-            encoded = json.dumps(payload).encode()
+                encoded = b"{}"
+                ctype = "application/json"
             self.send_response(200)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(encoded)))
             self.end_headers()
             self.wfile.write(encoded)

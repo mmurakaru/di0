@@ -21,6 +21,7 @@ class ReconcileQuery:
     query: str  # path to the .sql file
     depends_on: str | None = None  # run after this query; inject its keys
     keys: str | None = None  # the dependency column whose values fill the SQL's {keys}
+    chunk: int | None = None  # inject keys in batches of this size (for large key sets)
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class ReconcileSpec:
                 query=q["query"],
                 depends_on=q.get("depends_on"),
                 keys=q.get("keys"),
+                chunk=q.get("chunk"),
             )
             for q in data.get("queries", [])
         )

@@ -35,6 +35,8 @@ warehouse is configuration, not code.
 | **ExecutionPort** | Run validated SQL; optionally author artifacts | (pluggable) |
 
 The available adapters and their options live in [docs/adapters/](docs/adapters/).
+Cross-source questions (join results from several sources locally) are covered in
+[docs/reconcile.md](docs/reconcile.md).
 
 Everything warehouse-specific lives in one adapter module and one profile:
 

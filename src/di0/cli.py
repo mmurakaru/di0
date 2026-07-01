@@ -11,26 +11,16 @@ import argparse
 import sys
 from pathlib import Path
 
+from di0 import core
 from di0.core import AuthoringUnsupported, Engine, ValidationFailed
 from di0.deliverable import DashboardSpec
 from di0.profile import DEFAULT_PROFILE_NAME, load_profile
-from di0.registry import (
-    build_dialect_port,
-    build_execution_port,
-    build_schema_port,
-    build_validation_port,
-)
+from di0.reconcile import ReconcileSpec
+from di0.registry import build_combine_port, build_engine
 
 
 def _build_engine(profile_path: str) -> Engine:
-    profile = load_profile(profile_path)
-    execution_port = build_execution_port(profile)
-    return Engine(
-        schema_port=build_schema_port(profile),
-        dialect_port=build_dialect_port(profile),
-        validation_port=build_validation_port(profile, execution_port),
-        execution_port=execution_port,
-    )
+    return build_engine(load_profile(profile_path))
 
 
 def _read_sql(value: str) -> str:
@@ -112,6 +102,17 @@ def _cmd_author(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_reconcile(args: argparse.Namespace) -> int:
+    spec_path = Path(args.spec)
+    spec = ReconcileSpec.from_file(spec_path)
+    result = core.reconcile(spec, spec_path.parent, build_engine, build_combine_port())
+    if result.columns:
+        print("\t".join(result.columns))
+    for row in result.rows:
+        print("\t".join("" if value is None else str(value) for value in row))
+    return 0
+
+
 def _cmd_check(args: argparse.Namespace) -> int:
     engine = _build_engine(args.profile)
     paths = sorted(Path(args.queries).glob("**/*.sql"))
@@ -157,6 +158,10 @@ def main(argv: list[str] | None = None) -> int:
     check = sub.add_parser("check", help="validate every .sql file against the schema (CI gate)")
     check.add_argument("--queries", default="queries", help="directory of .sql files")
     check.set_defaults(func=_cmd_check)
+
+    reconcile = sub.add_parser("reconcile", help="run a cross-source reconcile spec, printing rows")
+    reconcile.add_argument("spec", help="path to a reconcile spec (.yml)")
+    reconcile.set_defaults(func=_cmd_reconcile)
 
     author = sub.add_parser("author", help="author a dashboard from a deliverable spec")
     author.add_argument("spec", help="path to a dashboard spec (.yml)")

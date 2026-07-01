@@ -25,13 +25,6 @@ from di0.registry import (
 
 FIXTURE_MANIFEST = str(Path(__file__).parent / "fixtures" / "manifest.json")
 
-CANNED_RESPONSE = {
-    "data": {
-        "cols": [{"name": "customer_id"}, {"name": "total_arr"}],
-        "rows": [[1, 1200], [2, 3400]],
-    }
-}
-
 
 class _Recorder:
     request_body: dict | None = None
@@ -44,12 +37,16 @@ def _make_server(recorder: _Recorder) -> HTTPServer:
             pass
 
         def do_POST(self):  # noqa: N802 - http.server API
+            import urllib.parse
+
             length = int(self.headers.get("Content-Length", 0))
-            recorder.request_body = json.loads(self.rfile.read(length))
+            form = urllib.parse.parse_qs(self.rfile.read(length).decode())
+            recorder.request_body = json.loads(form["query"][0])  # the query JSON
             recorder.request_headers = self.headers  # case-insensitive HTTPMessage
-            payload = json.dumps(CANNED_RESPONSE).encode()
+            # execute() fetches via the CSV export endpoint
+            payload = b"customer_id,total_arr\n1,1200\n2,3400\n"
             self.send_response(200)
-            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Type", "text/csv")
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
             self.wfile.write(payload)

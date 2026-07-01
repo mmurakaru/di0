@@ -16,9 +16,12 @@ profile, never stored in the profile.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from di0.deliverable import ResolvedDashboard
@@ -26,6 +29,20 @@ from di0.ports import Deliverable, QueryResult
 
 DEFAULT_API_KEY_ENV = "DI0_METABASE_API_KEY"
 DEFAULT_SESSION_ENV = "DI0_METABASE_SESSION"
+
+
+def _coerce(value: str):
+    """CSV values are strings; recover ints/floats/None so combines can aggregate."""
+    if value == "":
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        pass
+    try:
+        return float(value)
+    except ValueError:
+        return value
 
 
 def _axis_settings(x_label: str, y_label: str) -> dict:
@@ -60,12 +77,26 @@ class MetabaseExecution:
         self._timeout = timeout
 
     def execute(self, sql: str) -> QueryResult:
-        body = self._request(
-            "POST",
-            "/api/dataset",
-            {"database": self._database_id, "type": "native", "native": {"query": sql}},
+        # Fetch via the CSV export endpoint: /api/dataset silently caps native
+        # queries at 2000 rows, which would corrupt cross-source reconcile.
+        query = {"database": self._database_id, "type": "native", "native": {"query": sql}}
+        data = urllib.parse.urlencode({"query": json.dumps(query)}).encode()
+        request = urllib.request.Request(
+            f"{self._base_url}/api/dataset/csv",
+            data=data,
+            method="POST",
+            headers={"Content-Type": "application/x-www-form-urlencoded", **self._auth_header()},
         )
-        return self._to_result(body)
+        with urllib.request.urlopen(request, timeout=self._timeout) as response:
+            text = response.read().decode()
+        rows = list(csv.reader(io.StringIO(text)))
+        if not rows:
+            return QueryResult()
+        columns = tuple(rows[0])
+        return QueryResult(
+            columns=columns,
+            rows=tuple(tuple(_coerce(value) for value in row) for row in rows[1:]),
+        )
 
     def run_native(self, sql: str) -> tuple[bool, str | None]:
         """Run a native statement, reporting success or the warehouse error.
@@ -252,10 +283,3 @@ class MetabaseExecution:
         if isinstance(error, dict):
             return str(error.get("message") or error)
         return str(error or body.get("status") or "query failed")
-
-    @staticmethod
-    def _to_result(body: dict) -> QueryResult:
-        data = body.get("data", {})
-        columns = tuple(col.get("name", "") for col in data.get("cols", []))
-        rows = tuple(tuple(row) for row in data.get("rows", []))
-        return QueryResult(columns=columns, rows=rows)

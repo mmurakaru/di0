@@ -75,7 +75,7 @@ def _make_server(recorder: _Recorder) -> HTTPServer:
                 self._send({"id": 42})
             elif self.path == "/api/collection":
                 recorder.created_collections.append(body)
-                self._send({"id": 777})
+                self._send({"id": 700 + len(recorder.created_collections)})
             else:
                 self._send({})
 
@@ -253,6 +253,40 @@ def test_replace_archives_existing_same_name_dashboard_and_cards(server, monkeyp
     assert all(body == {"archived": True} for _, body in recorder.archived)
 
 
+def test_organize_by_tab_files_cards_into_per_tab_subcollections(server, monkeypatch, tmp_path):
+    base_url, recorder = server
+    monkeypatch.setenv("DI0_TEST_SESSION", "sess")
+    (tmp_path / "a.sql").write_text("SELECT customer_id FROM analytics.dim_customers")
+    (tmp_path / "b.sql").write_text("SELECT arr FROM analytics.fct_subscription_revenue")
+    spec_path = tmp_path / "dash.yml"
+    spec_path.write_text(
+        "name: D\n"
+        "collection_id: 42\n"
+        "organize_by_tab: true\n"
+        "tabs:\n"
+        "  - name: Census\n"
+        "    cards:\n"
+        "      - title: a\n"
+        "        query: a.sql\n"
+        "  - name: Revenue\n"
+        "    cards:\n"
+        "      - title: b\n"
+        "        query: b.sql\n"
+    )
+
+    deliverable = _engine(base_url).author(DashboardSpec.from_file(spec_path), base_dir=tmp_path)
+
+    # A sub-collection was created per tab, under the parent (42).
+    assert {"name": "Census", "parent_id": 42} in recorder.created_collections
+    assert {"name": "Revenue", "parent_id": 42} in recorder.created_collections
+    # Each tab's card was filed into its tab sub-collection (701, 702), not the parent.
+    assert recorder.cards[0]["collection_id"] == 701
+    assert recorder.cards[1]["collection_id"] == 702
+    # The dashboard itself stays in the parent collection.
+    assert recorder.dashboard["collection_id"] == 42
+    assert deliverable.detail["collection_id"] == 42
+
+
 def test_ensure_collection_creates_under_parent(server, monkeypatch):
     base_url, recorder = server
     monkeypatch.setenv("DI0_TEST_SESSION", "sess")
@@ -260,7 +294,7 @@ def test_ensure_collection_creates_under_parent(server, monkeypatch):
 
     new_id = adapter.ensure_collection("quarterly-reviews", parent_id=42)
 
-    assert new_id == 777
+    assert new_id == 701
     assert recorder.created_collections[0] == {"name": "quarterly-reviews", "parent_id": 42}
 
 

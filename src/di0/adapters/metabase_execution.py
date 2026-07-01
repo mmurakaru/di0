@@ -104,9 +104,15 @@ class MetabaseExecution:
         tabs: list[dict] = []
         dashcards: list[dict] = []
         card_ids: list[int] = []
+        parent_collection = dashboard.collection_id
         for tab_index, tab in enumerate(dashboard.tabs):
             tab_id = -(tab_index + 1)
             tabs.append({"id": tab_id, "name": tab.name})
+            # Optionally file this tab's cards into a per-tab sub-collection so the
+            # collection stays navigable; the dashboard stays in the parent.
+            card_collection = parent_collection
+            if dashboard.organize_by_tab and parent_collection is not None:
+                card_collection = self.ensure_collection(tab.name, parent_id=parent_collection)
             auto_row = 0
             for card in tab.cards:
                 row = card.row if card.row is not None else auto_row
@@ -130,7 +136,7 @@ class MetabaseExecution:
                         **card.viz,
                     }
                 else:
-                    card_id = self._create_card(card, dashboard.collection_id)
+                    card_id = self._create_card(card, card_collection)
                     card_ids.append(card_id)
                     dashcard["card_id"] = card_id
                 dashcards.append(dashcard)

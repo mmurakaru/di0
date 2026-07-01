@@ -20,6 +20,6 @@ jobs:
       - name: Test
         run: uv run pytest -q
       - name: Check queries against the schema (drift gate)
-        run: uv run di0 check
+        run: uv run di0 --profile examples/di0.profile.yml check --queries examples/queries
       - name: Invariant guard (no hard-coded refs in core)
         run: uv run di0 guard

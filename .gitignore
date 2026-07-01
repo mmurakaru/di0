@@ -7,3 +7,7 @@ dist/
 build/
 *.egg-info/
 .DS_Store
+
+# Your private workspace - queries, profiles, specs, context. Never committed.
+# Scaffold it with `di0 init` (copies from examples/). Override path with DI0_WORKSPACE.
+/workspace/

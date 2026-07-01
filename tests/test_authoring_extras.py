@@ -35,6 +35,7 @@ class _Recorder:
         self.collections: list[dict] = []  # what GET /api/collection returns
         self.layout: dict | None = None  # the PUT /api/dashboard/:id body
         self.layout_path: str | None = None  # the path that PUT targeted
+        self.updated_cards: list[tuple] = []  # (path, body) of in-place card PUTs
         self.collection_items: list[dict] = []  # GET /api/collection/:id/items
         self.existing_dashboard: dict = {}  # GET /api/dashboard/:id (for replace)
         self.archived: list[tuple] = []  # (path, body) of archive PUTs
@@ -84,10 +85,15 @@ def _make_server(recorder: _Recorder) -> HTTPServer:
             body = self._body()
             if "archived" in body:
                 recorder.archived.append((self.path, body))
+                self._send({"id": 0})
+            elif self.path.startswith("/api/card/"):
+                card_id = int(self.path.rsplit("/", 1)[-1])
+                recorder.updated_cards.append((self.path, body))
+                self._send({"id": card_id})  # in-place update keeps the card id
             else:
                 recorder.layout = body
                 recorder.layout_path = self.path
-            self._send({"id": 42})
+                self._send({"id": 42})
 
     return HTTPServer(("127.0.0.1", 0), Handler)
 
@@ -233,7 +239,11 @@ def test_replace_updates_existing_dashboard_in_place(server, monkeypatch, tmp_pa
     recorder.existing_dashboard = {
         "id": 500,
         "tabs": [{"id": 77, "name": "T"}],
-        "dashcards": [{"card_id": 901}, {"card_id": 902}, {"card_id": None}],
+        "dashcards": [
+            {"card_id": 901, "card": {"name": "c"}},  # same title -> reused in place
+            {"card_id": 902, "card": {"name": "gone this run"}},  # unreferenced -> archived
+            {"card_id": None},  # a text card
+        ],
     }
     (tmp_path / "q.sql").write_text("SELECT customer_id FROM analytics.dim_customers")
     spec_path = tmp_path / "dash.yml"
@@ -258,9 +268,15 @@ def test_replace_updates_existing_dashboard_in_place(server, monkeypatch, tmp_pa
     # The tab is matched by name and keeps its existing id (77), not a fresh negative id.
     assert recorder.layout["tabs"] == [{"id": 77, "name": "T"}]
 
+    # The card "c" is matched by title and updated in place (id 901 kept), not recreated.
+    assert recorder.cards == []  # no POST /api/card
+    assert [p for p, _ in recorder.updated_cards] == ["/api/card/901"]
+    query_dc = next(dc for dc in recorder.layout["dashcards"] if dc.get("card_id"))
+    assert query_dc["card_id"] == 901
+
     archived_paths = [p for p, _ in recorder.archived]
-    assert "/api/card/901" in archived_paths
-    assert "/api/card/902" in archived_paths  # its prior query cards archived
+    assert "/api/card/902" in archived_paths  # the card gone this run is archived
+    assert "/api/card/901" not in archived_paths  # the reused card is NOT archived
     assert all("/api/dashboard/500" not in p for p in archived_paths)  # dashboard NOT archived
     assert all("501" not in p for p in archived_paths)  # the other dashboard untouched
     assert all(body == {"archived": True} for _, body in recorder.archived)

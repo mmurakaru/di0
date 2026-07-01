@@ -101,10 +101,11 @@ tabs:
   `metabase_collection` -> else it **refuses** (never authors into the shared root). Set
   `metabase_collection` once in your profile so deliverables land in your space by default.
 - **`replace: true`** (or `di0 author --replace`) makes authoring idempotent: it
-  updates an existing same-name dashboard **in place** - reusing its id (and its
-  tab ids, matched by name) so the dashboard URL stays stable across rebuilds -
-  and archives the prior query cards. Re-runs refresh rather than duplicate. On
-  the first build (no same-name dashboard) it creates a new one.
+  updates an existing same-name dashboard **in place**, reusing its id, its tab
+  ids (matched by name), and its cards' ids (matched by title). The dashboard URL,
+  tab anchors, and card-level references (alerts, subscriptions, embeds) stay
+  stable across rebuilds. Cards no longer referenced after a rebuild are archived.
+  Re-runs refresh rather than duplicate; the first build creates a new dashboard.
 - **`organize_by_tab: true`** files each tab's cards into a sub-collection named
   after the tab (created under `collection_id`), keeping the collection navigable;
   the dashboard itself stays in the parent collection.

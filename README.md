@@ -12,10 +12,7 @@ Hard-coding physical table and column names into application code is the kind of
 coupling Codd's *data independence* was meant to avoid. di0 leans the other way:
 the core references a logical schema and resolves the physical details at the edges.
 
-> Aim: keep physical table and column names out of the core - resolve them from the
-> schema source instead. An invariant check flags stray references.
-
-The heart of di0 is the validation loop, not any single query:
+The IP is the validation loop, not any single query:
 
 ```
 resolve refs (SchemaPort) -> compose SQL (DialectPort)

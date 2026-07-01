@@ -79,6 +79,68 @@ def test_reconcile_runs_per_source_then_combines(tmp_path):
     assert out.rows == (("hero", 100),)
 
 
+class _LoggingEngine:
+    def __init__(self, result: QueryResult, log: list) -> None:
+        self._result = result
+        self._log = log
+
+    def query(self, sql: str) -> QueryResult:
+        self._log.append(sql)
+        return self._result
+
+
+def test_reconcile_dependent_query_injects_keys(tmp_path):
+    (tmp_path / "a.sql").write_text("select 1")
+    (tmp_path / "b.sql").write_text("SELECT id, words FROM big WHERE id IN ({keys})")
+    (tmp_path / "combine.sql").write_text(
+        "SELECT a.k AS k, SUM(b.words) AS words "
+        "FROM (SELECT DISTINCT k FROM a) a JOIN b ON b.id = a.k GROUP BY a.k"
+    )
+    spec_path = tmp_path / "spec.yml"
+    spec_path.write_text(  # dependent 'b' listed BEFORE its dependency 'a' on purpose
+        "sources:\n"
+        "  s1: {schema_source: A, dialect: d, validation: v, execution: e}\n"
+        "  s2: {schema_source: B, dialect: d, validation: v, execution: e}\n"
+        "queries:\n"
+        "  - {name: b, source: s2, query: b.sql, depends_on: a, keys: k}\n"
+        "  - {name: a, source: s1, query: a.sql}\n"
+        "combine: combine.sql\n"
+    )
+    logs: dict[str, list] = {}
+    results = {
+        "A": QueryResult(columns=("k",), rows=(("x1",), ("x2",), ("x1",))),  # dup x1
+        "B": QueryResult(columns=("id", "words"), rows=(("x1", 5), ("x2", 7))),
+    }
+
+    def factory(profile):
+        logs.setdefault(profile.schema_source, [])
+        return _LoggingEngine(results[profile.schema_source], logs[profile.schema_source])
+
+    out = core.reconcile(ReconcileSpec.from_file(spec_path), tmp_path, factory, DuckdbCombine())
+
+    b_sql = logs["B"][0]
+    assert "IN ('x1', 'x2')" in b_sql  # distinct keys injected, order preserved
+    assert "{keys}" not in b_sql
+    assert {r[0]: r[1] for r in out.rows} == {"x1": 5, "x2": 7}
+
+
+def test_reconcile_unresolved_dependency_raises(tmp_path):
+    (tmp_path / "b.sql").write_text("SELECT 1 WHERE 1 IN ({keys})")
+    (tmp_path / "combine.sql").write_text("SELECT 1 AS x")
+    spec_path = tmp_path / "spec.yml"
+    spec_path.write_text(
+        "sources:\n  s: {schema_source: A, dialect: d, validation: v, execution: e}\n"
+        "queries:\n  - {name: b, source: s, query: b.sql, depends_on: missing, keys: k}\n"
+        "combine: combine.sql\n"
+    )
+    import pytest
+
+    with pytest.raises(ValueError, match="unresolved"):
+        core.reconcile(
+            ReconcileSpec.from_file(spec_path), tmp_path, lambda p: None, DuckdbCombine()
+        )
+
+
 def test_reconcile_rejects_unknown_source(tmp_path):
     (tmp_path / "q.sql").write_text("select 1")
     (tmp_path / "combine.sql").write_text("SELECT 1")

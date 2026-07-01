@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from di0.adapters.dbt_manifest import DbtManifestSchema
 from di0.adapters.drizzle_schema import DrizzleSnapshotSchema
+from di0.adapters.duckdb_combine import DuckdbCombine
 from di0.adapters.explain_validation import ExplainValidation
 from di0.adapters.http_rows_execution import HttpRowsExecution
 from di0.adapters.metabase_execution import MetabaseExecution
@@ -16,7 +17,8 @@ from di0.adapters.noop_execution import NoopExecution
 from di0.adapters.sqlglot_dialect import SqlglotDialect
 from di0.adapters.sqlglot_validation import SqlglotOfflineValidation
 from di0.adapters.strapi_schema import StrapiContentTypeSchema
-from di0.ports import DialectPort, ExecutionPort, SchemaPort, ValidationPort
+from di0.core import Engine
+from di0.ports import CombinePort, DialectPort, ExecutionPort, SchemaPort, ValidationPort
 from di0.profile import Profile
 
 
@@ -94,3 +96,17 @@ def build_execution_port(profile: Profile) -> ExecutionPort:
         kwargs = {"api_key_env": str(api_key_env)} if api_key_env else {}
         return HttpRowsExecution(str(base_url), **kwargs)
     raise ValueError(f"unknown execution target: {profile.execution}")
+
+
+def build_combine_port() -> CombinePort:
+    return DuckdbCombine()
+
+
+def build_engine(profile: Profile) -> Engine:
+    execution_port = build_execution_port(profile)
+    return Engine(
+        schema_port=build_schema_port(profile),
+        dialect_port=build_dialect_port(profile),
+        validation_port=build_validation_port(profile, execution_port),
+        execution_port=execution_port,
+    )

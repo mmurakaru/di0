@@ -73,6 +73,18 @@ class ExecutionPort(Protocol):
 
 
 @runtime_checkable
+class CombinePort(Protocol):
+    """Combine result sets fetched from several sources into one, locally.
+
+    The cross-source join happens in di0's own process (not in any warehouse),
+    over the already-fetched rows, expressed as raw SQL - so reconcile keeps di0's
+    'real SQL, no DSL' invariant across sources.
+    """
+
+    def combine(self, tables: dict[str, QueryResult], sql: str) -> QueryResult: ...
+
+
+@runtime_checkable
 class AuthoringPort(Protocol):
     """Optional capability: author a BI artifact from validated, resolved queries.
 

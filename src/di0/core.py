@@ -9,6 +9,7 @@ physical table, column, or dialect literal.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from di0.deliverable import (
     ResolvedTab,
 )
 from di0.ports import (
+    CombinePort,
     Deliverable,
     DialectPort,
     ExecutionPort,
@@ -27,6 +29,8 @@ from di0.ports import (
     ValidationPort,
     ValidationResult,
 )
+from di0.profile import Profile
+from di0.reconcile import ReconcileSpec
 
 
 class ValidationFailed(Exception):
@@ -124,3 +128,28 @@ class Engine:
                 result = ValidationResult(ok=False, errors=(str(error).strip(),))
             results.append((path, result))
         return results
+
+
+def reconcile(
+    spec: ReconcileSpec,
+    base_dir: Path | None,
+    engine_factory: Callable[[Profile], Engine],
+    combine_port: CombinePort,
+) -> QueryResult:
+    """Answer a cross-source question: run one validated query per source, then combine.
+
+    Each query is validated and executed against its own source (reduced there);
+    the combine SQL joins the fetched results locally through the CombinePort. The
+    warehouses only fetch rows - the cross-source join never runs in any of them.
+    """
+    root = Path(base_dir) if base_dir is not None else Path.cwd()
+    tables: dict[str, QueryResult] = {}
+    for query in spec.queries:
+        if query.source not in spec.sources:
+            raise ValueError(
+                f"reconcile query {query.name!r} names unknown source {query.source!r}"
+            )
+        engine = engine_factory(Profile.from_dict(spec.sources[query.source]))
+        tables[query.name] = engine.query((root / query.query).read_text())
+    combine_sql = (root / spec.combine).read_text()
+    return combine_port.combine(tables, combine_sql)

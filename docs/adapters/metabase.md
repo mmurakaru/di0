@@ -66,17 +66,36 @@ collection_id: 123            # place cards + dashboard in this collection (omit
 tabs:
   - name: Overview
     cards:
+      - text: "# Overview\n\nSection narrative in **markdown**."   # text card (no query)
+        size_x: 24
+        size_y: 2
+      - title: Total customers
+        query: ../queries/customers.sql
+        display: scalar
+        row: 2                                   # explicit grid placement (omit = auto-stack)
+        col: 0
+        size_x: 6
+        size_y: 4
       - title: Monthly total
         query: ../queries/monthly.sql
         display: line
-        description: What this card measures.   # card annotation
-        x_label: Month                          # readable axis labels
+        description: What this card measures.     # card annotation
+        x_label: Month                            # axis-label shorthands
         y_label: Total (USD)
+        viz:                                      # raw visualization_settings pass-through
+          graph.series_breakout: true
+          column_settings: {}
 ```
 
-`collection_id` keeps a deliverable out of the shared root and inside a chosen
-collection. To create (or reuse) a collection first, the adapter exposes
-`ensure_collection(name, parent_id)`, which returns the collection id.
+- **Query cards** (`query:`) are validated before authoring. **Text cards**
+  (`text:`, markdown) are virtual - no query, not validated.
+- **`viz`** passes straight through to Metabase `visualization_settings` (and wins
+  over the `x_label`/`y_label` shorthands on conflict), so series breakout, pie
+  dimensions, `scalar.field`, `column_settings`, y-axis scale, etc. are reachable
+  without di0 modelling each one.
+- **`row`/`col`** place a card on the grid explicitly; omit to auto-stack.
+- `collection_id` keeps a deliverable out of the shared root. To create (or reuse) a
+  collection first, the adapter exposes `ensure_collection(name, parent_id)`.
 
 ## Live validation
 

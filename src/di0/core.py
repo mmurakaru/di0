@@ -68,27 +68,34 @@ class Engine:
             raise AuthoringUnsupported(
                 "the configured execution adapter cannot author deliverables"
             )
-        root = base_dir or Path.cwd()
+        root = Path(base_dir) if base_dir is not None else Path.cwd()
         schema = self.schema_port.resolve()
         resolved_tabs: list[ResolvedTab] = []
         for tab in spec.tabs:
             resolved_cards: list[ResolvedCard] = []
             for card in tab.cards:
-                sql = (root / card.query).read_text()
-                composed = self.dialect_port.compose(sql)
-                result = self.validation_port.validate(composed, schema)
-                if not result.ok:
-                    raise ValidationFailed(result)
+                if card.is_text:
+                    composed = ""  # text cards carry no SQL and are not validated
+                else:
+                    sql = (root / card.query).read_text()
+                    composed = self.dialect_port.compose(sql)
+                    result = self.validation_port.validate(composed, schema)
+                    if not result.ok:
+                        raise ValidationFailed(result)
                 resolved_cards.append(
                     ResolvedCard(
                         title=card.title,
                         sql=composed,
+                        text=card.text,
                         display=card.display,
                         size_x=card.size_x,
                         size_y=card.size_y,
+                        row=card.row,
+                        col=card.col,
                         description=card.description,
                         x_label=card.x_label,
                         y_label=card.y_label,
+                        viz=card.viz,
                     )
                 )
             resolved_tabs.append(ResolvedTab(name=tab.name, cards=tuple(resolved_cards)))

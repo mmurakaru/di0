@@ -33,6 +33,7 @@ class _Recorder:
         self.dashboard: dict | None = None
         self.created_collections: list[dict] = []
         self.collections: list[dict] = []  # what GET /api/collection returns
+        self.layout: dict | None = None  # the PUT /api/dashboard/:id body
 
 
 def _make_server(recorder: _Recorder) -> HTTPServer:
@@ -72,7 +73,7 @@ def _make_server(recorder: _Recorder) -> HTTPServer:
                 self._send({})
 
         def do_PUT(self):  # noqa: N802
-            self._body()
+            recorder.layout = self._body()
             self._send({"id": 42})
 
     return HTTPServer(("127.0.0.1", 0), Handler)
@@ -147,6 +148,44 @@ def test_author_places_in_collection_with_annotations_and_axes(server, monkeypat
     assert card["visualization_settings"]["graph.y_axis.title_text"] == "ARR (USD)"
     assert recorder.dashboard["collection_id"] == 42
     assert deliverable.detail["collection_id"] == 42
+
+
+def test_text_card_is_virtual_and_grid_and_viz_passthrough(server, monkeypatch, tmp_path):
+    base_url, recorder = server
+    monkeypatch.setenv("DI0_TEST_SESSION", "sess")
+    (tmp_path / "q.sql").write_text("SELECT customer_id FROM analytics.dim_customers")
+    spec_path = tmp_path / "dash.yml"
+    spec_path.write_text(
+        "name: Brief\n"
+        "tabs:\n"
+        "  - name: Overview\n"
+        "    cards:\n"
+        "      - text: '# Executive Brief\\n\\nKey facts.'\n"
+        "        size_x: 24\n"
+        "        size_y: 2\n"
+        "      - title: Customers\n"
+        "        query: q.sql\n"
+        "        display: scalar\n"
+        "        row: 2\n"
+        "        col: 0\n"
+        "        size_x: 6\n"
+        "        size_y: 4\n"
+        "        viz:\n"
+        "          scalar.field: customer_id\n"
+        "          column_settings: {}\n"
+    )
+
+    _engine(base_url).author(DashboardSpec.from_file(spec_path), base_dir=tmp_path)
+
+    # Only the query card hit /api/card; the text card did not.
+    assert len(recorder.cards) == 1
+    assert recorder.cards[0]["visualization_settings"]["scalar.field"] == "customer_id"
+
+    dashcards = recorder.layout["dashcards"]
+    text_dc = next(dc for dc in dashcards if dc.get("card_id") is None)
+    query_dc = next(dc for dc in dashcards if dc.get("card_id") is not None)
+    assert "Executive Brief" in text_dc["visualization_settings"]["text"]
+    assert (query_dc["row"], query_dc["col"], query_dc["size_x"]) == (2, 0, 6)
 
 
 def test_ensure_collection_creates_under_parent(server, monkeypatch):

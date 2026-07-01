@@ -105,22 +105,30 @@ class MetabaseExecution:
         for tab_index, tab in enumerate(dashboard.tabs):
             tab_id = -(tab_index + 1)
             tabs.append({"id": tab_id, "name": tab.name})
-            row = 0
+            auto_row = 0
             for card in tab.cards:
-                card_id = self._create_card(card, dashboard.collection_id)
-                card_ids.append(card_id)
-                dashcards.append(
-                    {
-                        "id": -(len(dashcards) + 1),
-                        "card_id": card_id,
-                        "dashboard_tab_id": tab_id,
-                        "row": row,
-                        "col": 0,
-                        "size_x": card.size_x,
-                        "size_y": card.size_y,
-                    }
-                )
-                row += card.size_y
+                row = card.row if card.row is not None else auto_row
+                col = card.col if card.col is not None else 0
+                dashcard: dict = {
+                    "id": -(len(dashcards) + 1),
+                    "dashboard_tab_id": tab_id,
+                    "row": row,
+                    "col": col,
+                    "size_x": card.size_x,
+                    "size_y": card.size_y,
+                }
+                if card.is_text:
+                    # Virtual text card: no /api/card, markdown lives on the dashcard.
+                    dashcard["card_id"] = None
+                    dashcard["visualization_settings"] = {"text": card.text, **card.viz}
+                else:
+                    card_id = self._create_card(card, dashboard.collection_id)
+                    card_ids.append(card_id)
+                    dashcard["card_id"] = card_id
+                dashcards.append(dashcard)
+                # Auto-stack only advances when placement is implicit.
+                if card.row is None:
+                    auto_row = row + card.size_y
 
         dashboard_payload: dict = {"name": dashboard.name}
         if dashboard.collection_id is not None:
@@ -144,10 +152,12 @@ class MetabaseExecution:
         )
 
     def _create_card(self, card, collection_id: int | None) -> int:
+        # Axis-label shorthands first, then raw viz pass-through wins on conflict.
+        visualization_settings = {**_axis_settings(card.x_label, card.y_label), **card.viz}
         payload: dict = {
             "name": card.title,
             "display": card.display,
-            "visualization_settings": _axis_settings(card.x_label, card.y_label),
+            "visualization_settings": visualization_settings,
             "dataset_query": {
                 "database": self._database_id,
                 "type": "native",

@@ -8,12 +8,9 @@ not a 2am dashboard.
 
 ## The principle
 
-Hard-coding physical table and column names into application code is the exact
-regression that Codd's *data independence* was invented to prevent. di0 restores
-it: the core references a logical schema and resolves it at the edges.
-
-> If a physical table or column name appears as a string literal in the core, it
-> is a bug.
+Hard-coding physical table and column names into application code is the kind of
+coupling Codd's *data independence* was meant to avoid. di0 leans the other way:
+the core references a logical schema and resolves the physical details at the edges.
 
 The IP is the validation loop, not any single query:
 
@@ -21,6 +18,10 @@ The IP is the validation loop, not any single query:
 resolve refs (SchemaPort) -> compose SQL (DialectPort)
   -> validate against the schema (ValidationPort) -> only then execute (ExecutionPort)
 ```
+
+For questions that span sources in different systems, di0 also does
+[cross-source reconcile](docs/reconcile.md): fetch reduced results per source, then
+join them locally.
 
 ## Ports and adapters
 

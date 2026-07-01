@@ -124,6 +124,34 @@ def test_reconcile_dependent_query_injects_keys(tmp_path):
     assert {r[0]: r[1] for r in out.rows} == {"x1": 5, "x2": 7}
 
 
+def test_reconcile_dependent_keys_are_case_insensitive(tmp_path):
+    (tmp_path / "a.sql").write_text("select 1")
+    (tmp_path / "b.sql").write_text("SELECT id FROM big WHERE id IN ({keys})")
+    (tmp_path / "combine.sql").write_text("SELECT COUNT(*) AS n FROM b")
+    spec_path = tmp_path / "spec.yml"
+    spec_path.write_text(
+        "sources:\n"
+        "  s1: {schema_source: A, dialect: d, validation: v, execution: e}\n"
+        "  s2: {schema_source: B, dialect: d, validation: v, execution: e}\n"
+        "queries:\n"
+        "  - {name: a, source: s1, query: a.sql}\n"
+        "  - {name: b, source: s2, query: b.sql, depends_on: a, keys: segment_id}\n"
+        "combine: combine.sql\n"
+    )
+    logs: dict[str, list] = {}
+    results = {
+        "A": QueryResult(columns=("SEGMENT_ID",), rows=(("x1",), ("x2",))),  # upper-cased
+        "B": QueryResult(columns=("id",), rows=(("x1",),)),
+    }
+
+    def factory(profile):
+        logs.setdefault(profile.schema_source, [])
+        return _LoggingEngine(results[profile.schema_source], logs[profile.schema_source])
+
+    core.reconcile(ReconcileSpec.from_file(spec_path), tmp_path, factory, DuckdbCombine())
+    assert "IN ('x1', 'x2')" in logs["B"][0]  # matched SEGMENT_ID despite lowercase `keys`
+
+
 def test_reconcile_unresolved_dependency_raises(tmp_path):
     (tmp_path / "b.sql").write_text("SELECT 1 WHERE 1 IN ({keys})")
     (tmp_path / "combine.sql").write_text("SELECT 1 AS x")

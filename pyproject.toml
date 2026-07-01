@@ -1,6 +1,6 @@
 [project]
 name = "di0"
-version = "0.0.1"
+version = "0.1.0rc1"
 description = "data independence, zero hard-coded references - a thin, break-safe analytics wrapper"
 readme = "README.md"
 requires-python = ">=3.11"

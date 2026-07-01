@@ -91,9 +91,9 @@ class _LoggingEngine:
 
 def test_reconcile_dependent_query_injects_keys(tmp_path):
     (tmp_path / "a.sql").write_text("select 1")
-    (tmp_path / "b.sql").write_text("SELECT id, words FROM big WHERE id IN ({keys})")
+    (tmp_path / "b.sql").write_text("SELECT id, amount FROM big WHERE id IN ({keys})")
     (tmp_path / "combine.sql").write_text(
-        "SELECT a.k AS k, SUM(b.words) AS words "
+        "SELECT a.k AS k, SUM(b.amount) AS amount "
         "FROM (SELECT DISTINCT k FROM a) a JOIN b ON b.id = a.k GROUP BY a.k"
     )
     spec_path = tmp_path / "spec.yml"
@@ -109,7 +109,7 @@ def test_reconcile_dependent_query_injects_keys(tmp_path):
     logs: dict[str, list] = {}
     results = {
         "A": QueryResult(columns=("k",), rows=(("x1",), ("x2",), ("x1",))),  # dup x1
-        "B": QueryResult(columns=("id", "words"), rows=(("x1", 5), ("x2", 7))),
+        "B": QueryResult(columns=("id", "amount"), rows=(("x1", 5), ("x2", 7))),
     }
 
     def factory(profile):
@@ -135,12 +135,12 @@ def test_reconcile_dependent_keys_are_case_insensitive(tmp_path):
         "  s2: {schema_source: B, dialect: d, validation: v, execution: e}\n"
         "queries:\n"
         "  - {name: a, source: s1, query: a.sql}\n"
-        "  - {name: b, source: s2, query: b.sql, depends_on: a, keys: segment_id}\n"
+        "  - {name: b, source: s2, query: b.sql, depends_on: a, keys: customer_id}\n"
         "combine: combine.sql\n"
     )
     logs: dict[str, list] = {}
     results = {
-        "A": QueryResult(columns=("SEGMENT_ID",), rows=(("x1",), ("x2",))),  # upper-cased
+        "A": QueryResult(columns=("CUSTOMER_ID",), rows=(("x1",), ("x2",))),  # upper-cased
         "B": QueryResult(columns=("id",), rows=(("x1",),)),
     }
 
@@ -149,7 +149,7 @@ def test_reconcile_dependent_keys_are_case_insensitive(tmp_path):
         return _LoggingEngine(results[profile.schema_source], logs[profile.schema_source])
 
     core.reconcile(ReconcileSpec.from_file(spec_path), tmp_path, factory, DuckdbCombine())
-    assert "IN ('x1', 'x2')" in logs["B"][0]  # matched SEGMENT_ID despite lowercase `keys`
+    assert "IN ('x1', 'x2')" in logs["B"][0]  # matched CUSTOMER_ID despite lowercase `keys`
 
 
 def test_reconcile_dependent_chunks_large_key_sets(tmp_path):

@@ -62,6 +62,7 @@ class DashboardSpec:
     name: str
     tabs: tuple[TabSpec, ...]
     collection_id: int | None = None
+    replace: bool = False  # archive an existing same-name dashboard first
 
     @classmethod
     def from_file(cls, path: str | Path) -> DashboardSpec:
@@ -78,6 +79,7 @@ class DashboardSpec:
             name=data["name"],
             tabs=tabs,
             collection_id=int(collection_id) if collection_id is not None else None,
+            replace=bool(data.get("replace", False)),
         )
 
 
@@ -112,3 +114,4 @@ class ResolvedDashboard:
     name: str
     tabs: tuple[ResolvedTab, ...] = field(default_factory=tuple)
     collection_id: int | None = None
+    replace: bool = False

@@ -103,6 +103,7 @@ class Engine:
             name=spec.name,
             tabs=tuple(resolved_tabs),
             collection_id=spec.collection_id,
+            replace=spec.replace,
         )
         return self.execution_port.author(dashboard)
 

@@ -3,8 +3,7 @@
 A thin, break-safe analytics wrapper. di0 lets an agent ask analytics questions
 and build dashboards while owning **zero schema knowledge**: every table, column,
 join, and metric is resolved live from a schema source, and every query is
-validated against that schema before it runs - so schema drift breaks the build,
-not a 2am dashboard.
+validated against that schema before it runs.
 
 ## The principle
 

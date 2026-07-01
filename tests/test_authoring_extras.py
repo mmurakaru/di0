@@ -34,6 +34,7 @@ class _Recorder:
         self.created_collections: list[dict] = []
         self.collections: list[dict] = []  # what GET /api/collection returns
         self.layout: dict | None = None  # the PUT /api/dashboard/:id body
+        self.layout_path: str | None = None  # the path that PUT targeted
         self.collection_items: list[dict] = []  # GET /api/collection/:id/items
         self.existing_dashboard: dict = {}  # GET /api/dashboard/:id (for replace)
         self.archived: list[tuple] = []  # (path, body) of archive PUTs
@@ -85,6 +86,7 @@ def _make_server(recorder: _Recorder) -> HTTPServer:
                 recorder.archived.append((self.path, body))
             else:
                 recorder.layout = body
+                recorder.layout_path = self.path
             self._send({"id": 42})
 
     return HTTPServer(("127.0.0.1", 0), Handler)
@@ -221,7 +223,7 @@ def test_text_card_heading_display(server, monkeypatch, tmp_path):
     assert dc["visualization_settings"]["text"] == "Section title"
 
 
-def test_replace_archives_existing_same_name_dashboard_and_cards(server, monkeypatch, tmp_path):
+def test_replace_updates_existing_dashboard_in_place(server, monkeypatch, tmp_path):
     base_url, recorder = server
     monkeypatch.setenv("DI0_TEST_SESSION", "sess")
     recorder.collection_items = [
@@ -230,6 +232,7 @@ def test_replace_archives_existing_same_name_dashboard_and_cards(server, monkeyp
     ]
     recorder.existing_dashboard = {
         "id": 500,
+        "tabs": [{"id": 77, "name": "T"}],
         "dashcards": [{"card_id": 901}, {"card_id": 902}, {"card_id": None}],
     }
     (tmp_path / "q.sql").write_text("SELECT customer_id FROM analytics.dim_customers")
@@ -245,14 +248,46 @@ def test_replace_archives_existing_same_name_dashboard_and_cards(server, monkeyp
         "        query: q.sql\n"
     )
 
-    _engine(base_url).author(DashboardSpec.from_file(spec_path), base_dir=tmp_path)
+    deliverable = _engine(base_url).author(DashboardSpec.from_file(spec_path), base_dir=tmp_path)
+
+    # Updated in place: the layout PUT targets the existing dashboard, id preserved,
+    # and no new dashboard was POSTed - so the URL is stable across rebuilds.
+    assert deliverable.identifier == "500"
+    assert recorder.layout_path == "/api/dashboard/500"
+    assert recorder.dashboard is None  # no POST /api/dashboard
+    # The tab is matched by name and keeps its existing id (77), not a fresh negative id.
+    assert recorder.layout["tabs"] == [{"id": 77, "name": "T"}]
 
     archived_paths = [p for p, _ in recorder.archived]
     assert "/api/card/901" in archived_paths
-    assert "/api/card/902" in archived_paths  # its query cards archived
-    assert "/api/dashboard/500" in archived_paths  # the same-name dashboard archived
+    assert "/api/card/902" in archived_paths  # its prior query cards archived
+    assert all("/api/dashboard/500" not in p for p in archived_paths)  # dashboard NOT archived
     assert all("501" not in p for p in archived_paths)  # the other dashboard untouched
     assert all(body == {"archived": True} for _, body in recorder.archived)
+
+
+def test_replace_with_no_existing_creates_new_dashboard(server, monkeypatch, tmp_path):
+    base_url, recorder = server
+    monkeypatch.setenv("DI0_TEST_SESSION", "sess")
+    recorder.collection_items = []  # first-ever build: nothing to update in place
+    (tmp_path / "q.sql").write_text("SELECT customer_id FROM analytics.dim_customers")
+    spec_path = tmp_path / "dash.yml"
+    spec_path.write_text(
+        "name: Fresh\n"
+        "collection_id: 42\n"
+        "replace: true\n"
+        "tabs:\n"
+        "  - name: T\n"
+        "    cards:\n"
+        "      - title: c\n"
+        "        query: q.sql\n"
+    )
+
+    deliverable = _engine(base_url).author(DashboardSpec.from_file(spec_path), base_dir=tmp_path)
+
+    assert recorder.dashboard == {"name": "Fresh", "collection_id": 42}  # POSTed new
+    assert deliverable.identifier == "42"
+    assert recorder.archived == []  # nothing to archive on a first build
 
 
 def test_organize_by_tab_files_cards_into_per_tab_subcollections(server, monkeypatch, tmp_path):

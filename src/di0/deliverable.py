@@ -62,7 +62,7 @@ class DashboardSpec:
     name: str
     tabs: tuple[TabSpec, ...]
     collection_id: int | None = None
-    replace: bool = False  # archive an existing same-name dashboard first
+    replace: bool = False  # update an existing same-name dashboard in place (stable URL)
     organize_by_tab: bool = False  # file each tab's cards into a per-tab sub-collection
 
     @classmethod

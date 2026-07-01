@@ -134,9 +134,13 @@ def _key_list_sql(result: QueryResult, column: str | None) -> str:
     """Render a dependency column's distinct values as a SQL IN-list of literals."""
     if not column:
         raise ValueError("a dependent reconcile query must set `keys`")
-    if column not in result.columns:
+    # Column casing varies by source (Snowflake upper-cases, Postgres lower-cases),
+    # so match the key column case-insensitively.
+    by_lower = {c.lower(): c for c in result.columns}
+    actual = by_lower.get(column.lower())
+    if actual is None:
         raise ValueError(f"dependency has no key column {column!r} (has {result.columns})")
-    index = result.columns.index(column)
+    index = result.columns.index(actual)
     seen: list = []
     unique: set = set()
     for row in result.rows:

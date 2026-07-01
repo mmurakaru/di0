@@ -46,6 +46,7 @@ class MetabaseExecution:
         auth: str = "api-key",
         api_key_env: str = DEFAULT_API_KEY_ENV,
         session_env: str = DEFAULT_SESSION_ENV,
+        default_collection_id: int | None = None,
         timeout: float = 30.0,
     ) -> None:
         if auth not in ("api-key", "session"):
@@ -55,6 +56,7 @@ class MetabaseExecution:
         self._auth = auth
         self._api_key_env = api_key_env
         self._session_env = session_env
+        self._default_collection_id = default_collection_id
         self._timeout = timeout
 
     def execute(self, sql: str) -> QueryResult:
@@ -99,19 +101,30 @@ class MetabaseExecution:
         return self._request("POST", "/api/collection", payload)["id"]
 
     def author(self, dashboard: ResolvedDashboard) -> Deliverable:
-        if dashboard.replace and dashboard.collection_id is not None:
-            self._archive_existing(dashboard.name, dashboard.collection_id)
+        # Opinionated safe default: author into a chosen collection, never the shared
+        # root. Prefer the spec's collection, else the profile default; refuse if neither.
+        parent_collection = (
+            dashboard.collection_id
+            if dashboard.collection_id is not None
+            else self._default_collection_id
+        )
+        if parent_collection is None:
+            raise ValueError(
+                "refusing to author into the shared root: set a collection "
+                "(spec `collection_id` or profile `metabase_collection`)"
+            )
+        if dashboard.replace:
+            self._archive_existing(dashboard.name, parent_collection)
         tabs: list[dict] = []
         dashcards: list[dict] = []
         card_ids: list[int] = []
-        parent_collection = dashboard.collection_id
         for tab_index, tab in enumerate(dashboard.tabs):
             tab_id = -(tab_index + 1)
             tabs.append({"id": tab_id, "name": tab.name})
             # Optionally file this tab's cards into a per-tab sub-collection so the
             # collection stays navigable; the dashboard stays in the parent.
             card_collection = parent_collection
-            if dashboard.organize_by_tab and parent_collection is not None:
+            if dashboard.organize_by_tab:
                 card_collection = self.ensure_collection(tab.name, parent_id=parent_collection)
             auto_row = 0
             for card in tab.cards:
@@ -144,10 +157,9 @@ class MetabaseExecution:
                 if card.row is None:
                     auto_row = row + card.size_y
 
-        dashboard_payload: dict = {"name": dashboard.name}
-        if dashboard.collection_id is not None:
-            dashboard_payload["collection_id"] = dashboard.collection_id
-        created = self._request("POST", "/api/dashboard", dashboard_payload)
+        created = self._request(
+            "POST", "/api/dashboard", {"name": dashboard.name, "collection_id": parent_collection}
+        )
         dashboard_id = created["id"]
         self._request(
             "PUT",
@@ -161,7 +173,7 @@ class MetabaseExecution:
                 "url": f"{self._base_url}/dashboard/{dashboard_id}",
                 "card_ids": card_ids,
                 "tabs": [tab.name for tab in dashboard.tabs],
-                "collection_id": dashboard.collection_id,
+                "collection_id": parent_collection,
             },
         )
 

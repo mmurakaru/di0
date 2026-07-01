@@ -168,6 +168,7 @@ def test_text_card_is_virtual_and_grid_and_viz_passthrough(server, monkeypatch, 
     spec_path = tmp_path / "dash.yml"
     spec_path.write_text(
         "name: Brief\n"
+        "collection_id: 42\n"
         "tabs:\n"
         "  - name: Overview\n"
         "    cards:\n"
@@ -207,6 +208,7 @@ def test_text_card_heading_display(server, monkeypatch, tmp_path):
     spec_path = tmp_path / "dash.yml"
     spec_path.write_text(
         "name: H\n"
+        "collection_id: 42\n"
         "tabs:\n"
         "  - name: T\n"
         "    cards:\n"
@@ -285,6 +287,49 @@ def test_organize_by_tab_files_cards_into_per_tab_subcollections(server, monkeyp
     # The dashboard itself stays in the parent collection.
     assert recorder.dashboard["collection_id"] == 42
     assert deliverable.detail["collection_id"] == 42
+
+
+def test_profile_default_collection_used_when_spec_omits_it(server, monkeypatch, tmp_path):
+    base_url, recorder = server
+    monkeypatch.setenv("DI0_TEST_SESSION", "sess")
+    (tmp_path / "q.sql").write_text("SELECT customer_id FROM analytics.dim_customers")
+    spec_path = tmp_path / "dash.yml"
+    spec_path.write_text(
+        "name: D\ntabs:\n  - name: T\n    cards:\n      - title: c\n        query: q.sql\n"
+    )
+
+    profile = Profile(
+        "dbt-manifest", "snowflake", "sqlglot-offline", "metabase",
+        {
+            "manifest_path": FIXTURE_MANIFEST, "metabase_url": base_url,
+            "metabase_database_id": 7, "metabase_auth": "session",
+            "metabase_session_env": "DI0_TEST_SESSION", "metabase_collection": 555,
+        },
+    )
+    ep = build_execution_port(profile)
+    engine = Engine(
+        schema_port=build_schema_port(profile), dialect_port=build_dialect_port(profile),
+        validation_port=build_validation_port(profile, ep), execution_port=ep,
+    )
+    deliverable = engine.author(DashboardSpec.from_file(spec_path), base_dir=tmp_path)
+    # Spec had no collection_id, so the profile default (555) is used.
+    assert recorder.cards[0]["collection_id"] == 555
+    assert recorder.dashboard["collection_id"] == 555
+    assert deliverable.detail["collection_id"] == 555
+
+
+def test_refuse_shared_root_when_no_collection_anywhere(server, monkeypatch, tmp_path):
+    base_url, _ = server
+    monkeypatch.setenv("DI0_TEST_SESSION", "sess")
+    (tmp_path / "q.sql").write_text("SELECT customer_id FROM analytics.dim_customers")
+    spec_path = tmp_path / "dash.yml"
+    spec_path.write_text(
+        "name: D\ntabs:\n  - name: T\n    cards:\n      - title: c\n        query: q.sql\n"
+    )
+
+    # No spec collection_id and no profile default -> refuse.
+    with pytest.raises(ValueError, match="shared root"):
+        _engine(base_url).author(DashboardSpec.from_file(spec_path), base_dir=tmp_path)
 
 
 def test_ensure_collection_creates_under_parent(server, monkeypatch):

@@ -7,9 +7,6 @@ mocked Metabase that records the payloads it receives.
 
 from __future__ import annotations
 
-import json
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 import pytest
@@ -17,99 +14,9 @@ import pytest
 from di0.core import Engine
 from di0.deliverable import DashboardSpec
 from di0.profile import Profile
-from di0.registry import (
-    build_dialect_port,
-    build_execution_port,
-    build_schema_port,
-    build_validation_port,
-)
+from di0.registry import build_engine, build_execution_port
 
 FIXTURE_MANIFEST = str(Path(__file__).parent / "fixtures" / "manifest.json")
-
-
-class _Recorder:
-    def __init__(self) -> None:
-        self.cards: list[dict] = []
-        self.dashboard: dict | None = None
-        self.created_collections: list[dict] = []
-        self.collections: list[dict] = []  # what GET /api/collection returns
-        self.layout: dict | None = None  # the PUT /api/dashboard/:id body
-        self.layout_path: str | None = None  # the path that PUT targeted
-        self.updated_cards: list[tuple] = []  # (path, body) of in-place card PUTs
-        self.collection_items: list[dict] = []  # GET /api/collection/:id/items
-        self.existing_dashboard: dict = {}  # GET /api/dashboard/:id (for replace)
-        self.archived: list[tuple] = []  # (path, body) of archive PUTs
-
-
-def _make_server(recorder: _Recorder) -> HTTPServer:
-    class Handler(BaseHTTPRequestHandler):
-        def log_message(self, *args):
-            pass
-
-        def _body(self) -> dict:
-            return json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
-
-        def _send(self, obj) -> None:
-            payload = json.dumps(obj).encode()
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
-
-        def do_GET(self):  # noqa: N802
-            if "/items" in self.path:
-                self._send(recorder.collection_items)
-            elif self.path.startswith("/api/dashboard/"):
-                self._send(recorder.existing_dashboard)
-            elif self.path == "/api/collection":
-                self._send(recorder.collections)
-            else:
-                self._send([])
-
-        def do_POST(self):  # noqa: N802
-            body = self._body()
-            if self.path == "/api/card":
-                recorder.cards.append(body)
-                self._send({"id": 900 + len(recorder.cards)})
-            elif self.path == "/api/dashboard":
-                recorder.dashboard = body
-                self._send({"id": 42})
-            elif self.path == "/api/collection":
-                recorder.created_collections.append(body)
-                self._send({"id": 700 + len(recorder.created_collections)})
-            else:
-                self._send({})
-
-        def do_PUT(self):  # noqa: N802
-            body = self._body()
-            if "archived" in body:
-                recorder.archived.append((self.path, body))
-                self._send({"id": 0})
-            elif self.path.startswith("/api/card/"):
-                card_id = int(self.path.rsplit("/", 1)[-1])
-                recorder.updated_cards.append((self.path, body))
-                self._send({"id": card_id})  # in-place update keeps the card id
-            else:
-                recorder.layout = body
-                recorder.layout_path = self.path
-                self._send({"id": 42})
-
-    return HTTPServer(("127.0.0.1", 0), Handler)
-
-
-@pytest.fixture
-def server():
-    recorder = _Recorder()
-    srv = _make_server(recorder)
-    thread = threading.Thread(target=srv.serve_forever, daemon=True)
-    thread.start()
-    host, port = srv.server_address
-    try:
-        yield f"http://{host}:{port}", recorder
-    finally:
-        srv.shutdown()
-        thread.join()
 
 
 def _profile(base_url: str) -> Profile:
@@ -126,18 +33,13 @@ def _profile(base_url: str) -> Profile:
 
 
 def _engine(base_url: str) -> Engine:
-    profile = _profile(base_url)
-    execution_port = build_execution_port(profile)
-    return Engine(
-        schema_port=build_schema_port(profile),
-        dialect_port=build_dialect_port(profile),
-        validation_port=build_validation_port(profile, execution_port),
-        execution_port=execution_port,
-    )
+    return build_engine(_profile(base_url))
 
 
-def test_author_places_in_collection_with_annotations_and_axes(server, monkeypatch, tmp_path):
-    base_url, recorder = server
+def test_author_places_in_collection_with_annotations_and_axes(
+    metabase_authoring, monkeypatch, tmp_path
+):
+    base_url, recorder = metabase_authoring
     monkeypatch.setenv("DI0_TEST_SESSION", "sess")
     (tmp_path / "q.sql").write_text(
         "SELECT revenue_month, SUM(arr) AS arr FROM analytics.fct_subscription_revenue "
@@ -169,8 +71,10 @@ def test_author_places_in_collection_with_annotations_and_axes(server, monkeypat
     assert deliverable.detail["collection_id"] == 42
 
 
-def test_text_card_is_virtual_and_grid_and_viz_passthrough(server, monkeypatch, tmp_path):
-    base_url, recorder = server
+def test_text_card_is_virtual_and_grid_and_viz_passthrough(
+    metabase_authoring, monkeypatch, tmp_path
+):
+    base_url, recorder = metabase_authoring
     monkeypatch.setenv("DI0_TEST_SESSION", "sess")
     (tmp_path / "q.sql").write_text("SELECT customer_id FROM analytics.dim_customers")
     spec_path = tmp_path / "dash.yml"
@@ -210,8 +114,8 @@ def test_text_card_is_virtual_and_grid_and_viz_passthrough(server, monkeypatch, 
     assert (query_dc["row"], query_dc["col"], query_dc["size_x"]) == (2, 0, 6)
 
 
-def test_text_card_heading_display(server, monkeypatch, tmp_path):
-    base_url, recorder = server
+def test_text_card_heading_display(metabase_authoring, monkeypatch, tmp_path):
+    base_url, recorder = metabase_authoring
     monkeypatch.setenv("DI0_TEST_SESSION", "sess")
     spec_path = tmp_path / "dash.yml"
     spec_path.write_text(
@@ -229,8 +133,8 @@ def test_text_card_heading_display(server, monkeypatch, tmp_path):
     assert dc["visualization_settings"]["text"] == "Section title"
 
 
-def test_replace_updates_existing_dashboard_in_place(server, monkeypatch, tmp_path):
-    base_url, recorder = server
+def test_replace_updates_existing_dashboard_in_place(metabase_authoring, monkeypatch, tmp_path):
+    base_url, recorder = metabase_authoring
     monkeypatch.setenv("DI0_TEST_SESSION", "sess")
     recorder.collection_items = [
         {"id": 500, "name": "Revenue", "model": "dashboard"},
@@ -282,8 +186,8 @@ def test_replace_updates_existing_dashboard_in_place(server, monkeypatch, tmp_pa
     assert all(body == {"archived": True} for _, body in recorder.archived)
 
 
-def test_replace_with_no_existing_creates_new_dashboard(server, monkeypatch, tmp_path):
-    base_url, recorder = server
+def test_replace_with_no_existing_creates_new_dashboard(metabase_authoring, monkeypatch, tmp_path):
+    base_url, recorder = metabase_authoring
     monkeypatch.setenv("DI0_TEST_SESSION", "sess")
     recorder.collection_items = []  # first-ever build: nothing to update in place
     (tmp_path / "q.sql").write_text("SELECT customer_id FROM analytics.dim_customers")
@@ -306,8 +210,10 @@ def test_replace_with_no_existing_creates_new_dashboard(server, monkeypatch, tmp
     assert recorder.archived == []  # nothing to archive on a first build
 
 
-def test_organize_by_tab_files_cards_into_per_tab_subcollections(server, monkeypatch, tmp_path):
-    base_url, recorder = server
+def test_organize_by_tab_files_cards_into_per_tab_subcollections(
+    metabase_authoring, monkeypatch, tmp_path
+):
+    base_url, recorder = metabase_authoring
     monkeypatch.setenv("DI0_TEST_SESSION", "sess")
     (tmp_path / "a.sql").write_text("SELECT customer_id FROM analytics.dim_customers")
     (tmp_path / "b.sql").write_text("SELECT arr FROM analytics.fct_subscription_revenue")
@@ -340,8 +246,10 @@ def test_organize_by_tab_files_cards_into_per_tab_subcollections(server, monkeyp
     assert deliverable.detail["collection_id"] == 42
 
 
-def test_profile_default_collection_used_when_spec_omits_it(server, monkeypatch, tmp_path):
-    base_url, recorder = server
+def test_profile_default_collection_used_when_spec_omits_it(
+    metabase_authoring, monkeypatch, tmp_path
+):
+    base_url, recorder = metabase_authoring
     monkeypatch.setenv("DI0_TEST_SESSION", "sess")
     (tmp_path / "q.sql").write_text("SELECT customer_id FROM analytics.dim_customers")
     spec_path = tmp_path / "dash.yml"
@@ -357,11 +265,7 @@ def test_profile_default_collection_used_when_spec_omits_it(server, monkeypatch,
             "metabase_session_env": "DI0_TEST_SESSION", "metabase_collection": 555,
         },
     )
-    ep = build_execution_port(profile)
-    engine = Engine(
-        schema_port=build_schema_port(profile), dialect_port=build_dialect_port(profile),
-        validation_port=build_validation_port(profile, ep), execution_port=ep,
-    )
+    engine = build_engine(profile)
     deliverable = engine.author(DashboardSpec.from_file(spec_path), base_dir=tmp_path)
     # Spec had no collection_id, so the profile default (555) is used.
     assert recorder.cards[0]["collection_id"] == 555
@@ -369,8 +273,8 @@ def test_profile_default_collection_used_when_spec_omits_it(server, monkeypatch,
     assert deliverable.detail["collection_id"] == 555
 
 
-def test_refuse_shared_root_when_no_collection_anywhere(server, monkeypatch, tmp_path):
-    base_url, _ = server
+def test_refuse_shared_root_when_no_collection_anywhere(metabase_authoring, monkeypatch, tmp_path):
+    base_url, _ = metabase_authoring
     monkeypatch.setenv("DI0_TEST_SESSION", "sess")
     (tmp_path / "q.sql").write_text("SELECT customer_id FROM analytics.dim_customers")
     spec_path = tmp_path / "dash.yml"
@@ -383,8 +287,8 @@ def test_refuse_shared_root_when_no_collection_anywhere(server, monkeypatch, tmp
         _engine(base_url).author(DashboardSpec.from_file(spec_path), base_dir=tmp_path)
 
 
-def test_ensure_collection_creates_under_parent(server, monkeypatch):
-    base_url, recorder = server
+def test_ensure_collection_creates_under_parent(metabase_authoring, monkeypatch):
+    base_url, recorder = metabase_authoring
     monkeypatch.setenv("DI0_TEST_SESSION", "sess")
     adapter = build_execution_port(_profile(base_url))
 
@@ -394,8 +298,8 @@ def test_ensure_collection_creates_under_parent(server, monkeypatch):
     assert recorder.created_collections[0] == {"name": "quarterly-reviews", "parent_id": 42}
 
 
-def test_ensure_collection_reuses_existing(server, monkeypatch):
-    base_url, recorder = server
+def test_ensure_collection_reuses_existing(metabase_authoring, monkeypatch):
+    base_url, recorder = metabase_authoring
     monkeypatch.setenv("DI0_TEST_SESSION", "sess")
     recorder.collections = [
         {"id": 999, "name": "quarterly-reviews", "location": "/42/"},

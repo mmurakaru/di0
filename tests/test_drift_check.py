@@ -11,12 +11,7 @@ from pathlib import Path
 
 from di0.core import Engine
 from di0.profile import Profile
-from di0.registry import (
-    build_dialect_port,
-    build_execution_port,
-    build_schema_port,
-    build_validation_port,
-)
+from di0.registry import build_engine
 
 
 def _manifest(current_arr_name: str) -> dict:
@@ -43,12 +38,7 @@ def _engine(manifest_path: Path) -> Engine:
         execution="noop",
         options={"manifest_path": str(manifest_path)},
     )
-    return Engine(
-        schema_port=build_schema_port(profile),
-        dialect_port=build_dialect_port(profile),
-        validation_port=build_validation_port(profile),
-        execution_port=build_execution_port(profile),
-    )
+    return build_engine(profile)
 
 
 def test_rename_upstream_turns_check_red(tmp_path):

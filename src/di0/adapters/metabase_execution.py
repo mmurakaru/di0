@@ -23,12 +23,127 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass, field
 
 from di0.deliverable import ResolvedDashboard
 from di0.ports import Deliverable, QueryResult
 
 DEFAULT_API_KEY_ENV = "DI0_METABASE_API_KEY"
 DEFAULT_SESSION_ENV = "DI0_METABASE_SESSION"
+
+
+@dataclass(frozen=True)
+class PlannedCard:
+    """Where a card lands on the grid, and whether it reuses an existing card."""
+
+    row: int
+    col: int
+    size_x: int
+    size_y: int
+    reuse_card_id: int | None = None  # update this existing card in place; None = create new
+    text_visualization_settings: dict | None = None  # set only for text (non-query) cards
+
+
+@dataclass(frozen=True)
+class PlannedTab:
+    id: int  # a reused existing id, or a negative placeholder for a brand-new tab
+    name: str
+    cards: tuple[PlannedCard, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class DashboardPlan:
+    """The shape of a dashboard rebuild, computed without touching the network."""
+
+    tabs: tuple[PlannedTab, ...]
+    archive_card_ids: frozenset[int]
+
+
+def _existing_card_ids(dashboard: dict | None) -> dict[str, int]:
+    """Map a dashboard's current query-card titles to their ids, for in-place reuse.
+
+    Metabase nests each card under its dashcard, so the title -> id map lets a
+    rebuild update matching cards in place (stable card ids) rather than churn.
+    """
+    if not dashboard:
+        return {}
+    mapping: dict[str, int] = {}
+    for dashcard in dashboard.get("dashcards") or dashboard.get("ordered_cards") or []:
+        card_id = dashcard.get("card_id")
+        name = (dashcard.get("card") or {}).get("name")
+        if card_id and name:
+            mapping[name] = card_id
+    return mapping
+
+
+def _all_existing_card_ids(dashboard: dict | None) -> set[int]:
+    """Every card id a dashboard currently references, named or not (for archival)."""
+    if not dashboard:
+        return set()
+    return {
+        dashcard["card_id"]
+        for dashcard in dashboard.get("dashcards") or dashboard.get("ordered_cards") or []
+        if dashcard.get("card_id")
+    }
+
+
+def _plan_dashboard(dashboard: ResolvedDashboard, existing: dict | None) -> DashboardPlan:
+    """Compute tab/card placement and reuse from plain data - no I/O.
+
+    A tab or card matched in `existing` (by name/title) reuses its id, so the
+    dashboard URL, tab anchors, and card references stay stable across rebuilds;
+    anything new gets a negative placeholder id, which Metabase resolves within
+    the same request. A card's real id (for a create) is only known once it is
+    written, so `reuse_card_id` is `None` there - the caller fills it in.
+    """
+    existing_tab_ids = (
+        {t.get("name"): t.get("id") for t in (existing.get("tabs") or [])} if existing else {}
+    )
+    existing_cards = _existing_card_ids(existing)
+
+    planned_tabs: list[PlannedTab] = []
+    reused_card_ids: set[int] = set()
+    for tab_index, tab in enumerate(dashboard.tabs):
+        tab_id = existing_tab_ids.get(tab.name, -(tab_index + 1))
+        planned_cards: list[PlannedCard] = []
+        auto_row = 0
+        for card in tab.cards:
+            row = card.row if card.row is not None else auto_row
+            col = card.col if card.col is not None else 0
+            if card.is_text:
+                # Virtual text card: no /api/card. Metabase needs a virtual_card
+                # scaffold ('text' body or 'heading') alongside the markdown.
+                kind = card.display if card.display in ("text", "heading") else "text"
+                planned_cards.append(
+                    PlannedCard(
+                        row=row,
+                        col=col,
+                        size_x=card.size_x,
+                        size_y=card.size_y,
+                        text_visualization_settings={
+                            "virtual_card": {"display": kind},
+                            "text": card.text,
+                            **card.viz,
+                        },
+                    )
+                )
+            else:
+                reuse_id = existing_cards.get(card.title)
+                if reuse_id is not None:
+                    reused_card_ids.add(reuse_id)
+                planned_cards.append(
+                    PlannedCard(
+                        row=row, col=col, size_x=card.size_x, size_y=card.size_y,
+                        reuse_card_id=reuse_id,
+                    )
+                )
+            # Auto-stack only advances when placement is implicit.
+            if card.row is None:
+                auto_row = row + card.size_y
+        planned_tabs.append(PlannedTab(id=tab_id, name=tab.name, cards=tuple(planned_cards)))
+
+    archive_ids = _all_existing_card_ids(existing) - reused_card_ids
+    return DashboardPlan(tabs=tuple(planned_tabs), archive_card_ids=frozenset(archive_ids))
 
 
 def _coerce(value: str):
@@ -151,57 +266,35 @@ class MetabaseExecution:
         existing = None
         if dashboard.replace:
             existing = self._find_existing(dashboard.name, parent_collection)
-        existing_tab_ids = (
-            {t.get("name"): t.get("id") for t in (existing.get("tabs") or [])} if existing else {}
-        )
-        existing_card_ids = self._existing_card_ids(existing)
-        used_card_ids: set[int] = set()
+        plan = _plan_dashboard(dashboard, existing)
+
         tabs: list[dict] = []
         dashcards: list[dict] = []
         card_ids: list[int] = []
-        for tab_index, tab in enumerate(dashboard.tabs):
-            tab_id = existing_tab_ids.get(tab.name)
-            if tab_id is None:
-                tab_id = -(tab_index + 1)
-            tabs.append({"id": tab_id, "name": tab.name})
+        for tab, planned_tab in zip(dashboard.tabs, plan.tabs, strict=True):
+            tabs.append({"id": planned_tab.id, "name": planned_tab.name})
             # Optionally file this tab's cards into a per-tab sub-collection so the
             # collection stays navigable; the dashboard stays in the parent.
             card_collection = parent_collection
             if dashboard.organize_by_tab:
                 card_collection = self.ensure_collection(tab.name, parent_id=parent_collection)
-            auto_row = 0
-            for card in tab.cards:
-                row = card.row if card.row is not None else auto_row
-                col = card.col if card.col is not None else 0
+            for card, planned_card in zip(tab.cards, planned_tab.cards, strict=True):
                 dashcard: dict = {
                     "id": -(len(dashcards) + 1),
-                    "dashboard_tab_id": tab_id,
-                    "row": row,
-                    "col": col,
-                    "size_x": card.size_x,
-                    "size_y": card.size_y,
+                    "dashboard_tab_id": planned_tab.id,
+                    "row": planned_card.row,
+                    "col": planned_card.col,
+                    "size_x": planned_card.size_x,
+                    "size_y": planned_card.size_y,
                 }
                 if card.is_text:
-                    # Virtual text card: no /api/card. Metabase needs a virtual_card
-                    # scaffold ('text' body or 'heading') alongside the markdown.
-                    kind = card.display if card.display in ("text", "heading") else "text"
                     dashcard["card_id"] = None
-                    dashcard["visualization_settings"] = {
-                        "virtual_card": {"display": kind},
-                        "text": card.text,
-                        **card.viz,
-                    }
+                    dashcard["visualization_settings"] = planned_card.text_visualization_settings
                 else:
-                    card_id = self._write_card(
-                        card, card_collection, existing_card_ids.get(card.title)
-                    )
+                    card_id = self._write_card(card, card_collection, planned_card.reuse_card_id)
                     card_ids.append(card_id)
-                    used_card_ids.add(card_id)
                     dashcard["card_id"] = card_id
                 dashcards.append(dashcard)
-                # Auto-stack only advances when placement is implicit.
-                if card.row is None:
-                    auto_row = row + card.size_y
 
         if existing:
             dashboard_id = existing["id"]
@@ -217,7 +310,7 @@ class MetabaseExecution:
             {"tabs": tabs, "dashcards": dashcards},
         )
         if existing:
-            self._archive_cards(existing, keep=used_card_ids)
+            self._archive_cards(plan.archive_card_ids)
         return Deliverable(
             kind="dashboard",
             identifier=str(dashboard_id),
@@ -241,29 +334,10 @@ class MetabaseExecution:
                 return self._get_one(f"/api/dashboard/{item['id']}")
         return None
 
-    def _existing_card_ids(self, dashboard: dict | None) -> dict[str, int]:
-        """Map a dashboard's current query-card titles to their ids, for in-place reuse.
-
-        Metabase nests each card under its dashcard, so the title -> id map lets a
-        rebuild update matching cards in place (stable card ids) rather than churn.
-        """
-        if not dashboard:
-            return {}
-        mapping: dict[str, int] = {}
-        for dashcard in dashboard.get("dashcards") or dashboard.get("ordered_cards") or []:
-            card_id = dashcard.get("card_id")
-            name = (dashcard.get("card") or {}).get("name")
-            if card_id and name:
-                mapping[name] = card_id
-        return mapping
-
-    def _archive_cards(self, dashboard: dict, keep: set[int] | None = None) -> None:
+    def _archive_cards(self, card_ids: frozenset[int]) -> None:
         """Archive the dashboard's prior query cards that this run did not reuse."""
-        keep = keep or set()
-        for dashcard in dashboard.get("dashcards") or dashboard.get("ordered_cards") or []:
-            card_id = dashcard.get("card_id")
-            if card_id and card_id not in keep:
-                self._request("PUT", f"/api/card/{card_id}", {"archived": True})
+        for card_id in card_ids:
+            self._request("PUT", f"/api/card/{card_id}", {"archived": True})
 
     def _write_card(self, card, collection_id: int | None, card_id: int | None = None) -> int:
         """Create a card, or update the given one in place (reusing its id)."""

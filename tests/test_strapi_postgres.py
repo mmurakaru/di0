@@ -12,12 +12,7 @@ from pathlib import Path
 
 from di0.core import Engine
 from di0.profile import Profile
-from di0.registry import (
-    build_dialect_port,
-    build_execution_port,
-    build_schema_port,
-    build_validation_port,
-)
+from di0.registry import build_engine, build_schema_port
 
 STRAPI_DIR = str(Path(__file__).parent / "fixtures" / "strapi")
 
@@ -43,12 +38,7 @@ def _engine(options: dict) -> Engine:
         execution="noop",
         options={"schema_dir": STRAPI_DIR, **options},
     )
-    return Engine(
-        schema_port=build_schema_port(profile),
-        dialect_port=build_dialect_port(profile),
-        validation_port=build_validation_port(profile),
-        execution_port=build_execution_port(profile),
-    )
+    return build_engine(profile)
 
 
 def test_link_table_resolved_from_convention():

@@ -12,12 +12,7 @@ import pytest
 
 from di0.core import Engine, ValidationFailed
 from di0.profile import Profile
-from di0.registry import (
-    build_dialect_port,
-    build_execution_port,
-    build_schema_port,
-    build_validation_port,
-)
+from di0.registry import build_engine
 
 FIXTURE_MANIFEST = str(Path(__file__).parent / "fixtures" / "manifest.json")
 
@@ -30,12 +25,7 @@ def _engine() -> Engine:
         execution="noop",
         options={"manifest_path": FIXTURE_MANIFEST},
     )
-    return Engine(
-        schema_port=build_schema_port(profile),
-        dialect_port=build_dialect_port(profile),
-        validation_port=build_validation_port(profile),
-        execution_port=build_execution_port(profile),
-    )
+    return build_engine(profile)
 
 
 def test_known_columns_pass() -> None:

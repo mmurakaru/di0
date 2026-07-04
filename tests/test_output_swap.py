@@ -8,8 +8,7 @@ author, so a deliverable request is refused: author() is the optional capability
 from __future__ import annotations
 
 import json
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 import pytest
@@ -17,12 +16,7 @@ import pytest
 from di0.core import AuthoringUnsupported, Engine
 from di0.deliverable import DashboardSpec
 from di0.profile import Profile
-from di0.registry import (
-    build_dialect_port,
-    build_execution_port,
-    build_schema_port,
-    build_validation_port,
-)
+from di0.registry import build_engine
 
 FIXTURE_MANIFEST = str(Path(__file__).parent / "fixtures" / "manifest.json")
 
@@ -31,7 +25,7 @@ COLUMNS = ["customer_id", "total_arr"]
 ROWS = [[1, 1200], [2, 3400]]
 
 
-def _make_server() -> HTTPServer:
+def _make_handler() -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
@@ -53,20 +47,12 @@ def _make_server() -> HTTPServer:
             self.end_headers()
             self.wfile.write(encoded)
 
-    return HTTPServer(("127.0.0.1", 0), Handler)
+    return Handler
 
 
 @pytest.fixture
-def server():
-    srv = _make_server()
-    thread = threading.Thread(target=srv.serve_forever, daemon=True)
-    thread.start()
-    host, port = srv.server_address
-    try:
-        yield f"http://{host}:{port}"
-    finally:
-        srv.shutdown()
-        thread.join()
+def server(start_http_server):
+    return start_http_server(_make_handler())
 
 
 def _engine(execution: str, base_url: str) -> Engine:
@@ -80,13 +66,7 @@ def _engine(execution: str, base_url: str) -> Engine:
     else:
         options |= {"rows_url": base_url, "rows_api_key_env": "DI0_TEST_KEY"}
     profile = Profile("dbt-manifest", "snowflake", "sqlglot-offline", execution, options)
-    execution_port = build_execution_port(profile)
-    return Engine(
-        schema_port=build_schema_port(profile),
-        dialect_port=build_dialect_port(profile),
-        validation_port=build_validation_port(profile, execution_port),
-        execution_port=execution_port,
-    )
+    return build_engine(profile)
 
 
 def test_same_query_identical_rows_across_adapters(server, monkeypatch):

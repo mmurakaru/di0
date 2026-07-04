@@ -8,20 +8,14 @@ tier satisfy the same ValidationPort, so the profile picks the trade-off.
 from __future__ import annotations
 
 import json
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 import pytest
 
 from di0.core import Engine, ValidationFailed
 from di0.profile import Profile
-from di0.registry import (
-    build_dialect_port,
-    build_execution_port,
-    build_schema_port,
-    build_validation_port,
-)
+from di0.registry import build_engine, build_execution_port, build_validation_port
 
 FIXTURE_MANIFEST = str(Path(__file__).parent / "fixtures" / "manifest.json")
 
@@ -30,7 +24,7 @@ class _Recorder:
     last_query: str | None = None
 
 
-def _make_server(recorder: _Recorder) -> HTTPServer:
+def _make_handler(recorder: _Recorder) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
@@ -54,21 +48,14 @@ def _make_server(recorder: _Recorder) -> HTTPServer:
             self.end_headers()
             self.wfile.write(encoded)
 
-    return HTTPServer(("127.0.0.1", 0), Handler)
+    return Handler
 
 
 @pytest.fixture
-def warehouse():
+def warehouse(start_http_server):
     recorder = _Recorder()
-    server = _make_server(recorder)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    host, port = server.server_address
-    try:
-        yield f"http://{host}:{port}", recorder
-    finally:
-        server.shutdown()
-        thread.join()
+    base_url = start_http_server(_make_handler(recorder))
+    return base_url, recorder
 
 
 def _engine(base_url: str) -> Engine:
@@ -84,13 +71,7 @@ def _engine(base_url: str) -> Engine:
             "metabase_api_key_env": "DI0_TEST_METABASE_KEY",
         },
     )
-    execution_port = build_execution_port(profile)
-    return Engine(
-        schema_port=build_schema_port(profile),
-        dialect_port=build_dialect_port(profile),
-        validation_port=build_validation_port(profile, execution_port),
-        execution_port=execution_port,
-    )
+    return build_engine(profile)
 
 
 def test_explain_passes_valid_query(warehouse, monkeypatch):

@@ -8,20 +8,15 @@ sends the API key from the environment.
 from __future__ import annotations
 
 import json
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import urllib.parse
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 import pytest
 
 from di0.core import Engine, ValidationFailed
 from di0.profile import Profile
-from di0.registry import (
-    build_dialect_port,
-    build_execution_port,
-    build_schema_port,
-    build_validation_port,
-)
+from di0.registry import build_engine, build_execution_port
 
 FIXTURE_MANIFEST = str(Path(__file__).parent / "fixtures" / "manifest.json")
 
@@ -31,14 +26,12 @@ class _Recorder:
     request_headers: dict | None = None
 
 
-def _make_server(recorder: _Recorder) -> HTTPServer:
+def _make_handler(recorder: _Recorder) -> type[BaseHTTPRequestHandler]:
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):  # noqa: A002 - silence test server logging
             pass
 
         def do_POST(self):  # noqa: N802 - http.server API
-            import urllib.parse
-
             length = int(self.headers.get("Content-Length", 0))
             form = urllib.parse.parse_qs(self.rfile.read(length).decode())
             recorder.request_body = json.loads(form["query"][0])  # the query JSON
@@ -51,21 +44,14 @@ def _make_server(recorder: _Recorder) -> HTTPServer:
             self.end_headers()
             self.wfile.write(payload)
 
-    return HTTPServer(("127.0.0.1", 0), Handler)
+    return Handler
 
 
 @pytest.fixture
-def metabase_server():
+def metabase_server(start_http_server):
     recorder = _Recorder()
-    server = _make_server(recorder)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    host, port = server.server_address
-    try:
-        yield f"http://{host}:{port}", recorder
-    finally:
-        server.shutdown()
-        thread.join()
+    base_url = start_http_server(_make_handler(recorder))
+    return base_url, recorder
 
 
 def _engine(base_url: str) -> Engine:
@@ -81,12 +67,7 @@ def _engine(base_url: str) -> Engine:
             "metabase_api_key_env": "DI0_TEST_METABASE_KEY",
         },
     )
-    return Engine(
-        schema_port=build_schema_port(profile),
-        dialect_port=build_dialect_port(profile),
-        validation_port=build_validation_port(profile),
-        execution_port=build_execution_port(profile),
-    )
+    return build_engine(profile)
 
 
 def test_validated_query_returns_rows(metabase_server, monkeypatch):

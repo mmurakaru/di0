@@ -66,6 +66,7 @@ class DashboardSpec:
     collection_id: int | None = None
     replace: bool = False  # update an existing same-name dashboard in place (stable URL)
     organize_by_tab: bool = False  # file each tab's cards into a per-tab sub-collection
+    own_collection: bool | str = False  # nest dashboard + cards in a sub-collection (name, or True)
     parameters: tuple[dict, ...] = ()  # dashboard-level filter widgets wired to card variables
 
     @classmethod
@@ -85,6 +86,7 @@ class DashboardSpec:
             collection_id=int(collection_id) if collection_id is not None else None,
             replace=bool(data.get("replace", False)),
             organize_by_tab=bool(data.get("organize_by_tab", False)),
+            own_collection=data.get("own_collection", False),
             parameters=tuple(data.get("parameters", []) or []),
         )
 
@@ -123,4 +125,5 @@ class ResolvedDashboard:
     collection_id: int | None = None
     replace: bool = False
     organize_by_tab: bool = False
+    own_collection: bool | str = False
     parameters: tuple[dict, ...] = ()

@@ -130,6 +130,7 @@ class Engine:
             collection_id=spec.collection_id,
             replace=spec.replace,
             organize_by_tab=spec.organize_by_tab,
+            own_collection=spec.own_collection,
             parameters=spec.parameters,
         )
         return self.execution_port.author(dashboard)

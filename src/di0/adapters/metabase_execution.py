@@ -259,13 +259,23 @@ class MetabaseExecution:
                 "refusing to author into the shared root: set a collection "
                 "(spec `collection_id` or profile `metabase_collection`)"
             )
+        # Optionally give the deliverable its own sub-collection so the parent stays
+        # clean: the dashboard and every card land here rather than beside siblings.
+        home_collection = parent_collection
+        if dashboard.own_collection:
+            sub_name = (
+                dashboard.own_collection
+                if isinstance(dashboard.own_collection, str)
+                else dashboard.name
+            )
+            home_collection = self.ensure_collection(sub_name, parent_id=parent_collection)
         # Replace = update in place: reuse a same-name dashboard's id, its tab ids
         # (matched by name), and its cards' ids (matched by title) so the dashboard
         # URL, tab anchors, and card-level references stay stable across rebuilds.
         # Cards no longer referenced after the rebuild are archived (see below).
         existing = None
         if dashboard.replace:
-            existing = self._find_existing(dashboard.name, parent_collection)
+            existing = self._find_existing(dashboard.name, home_collection)
         plan = _plan_dashboard(dashboard, existing)
 
         tabs: list[dict] = []
@@ -275,9 +285,9 @@ class MetabaseExecution:
             tabs.append({"id": planned_tab.id, "name": planned_tab.name})
             # Optionally file this tab's cards into a per-tab sub-collection so the
             # collection stays navigable; the dashboard stays in the parent.
-            card_collection = parent_collection
+            card_collection = home_collection
             if dashboard.organize_by_tab:
-                card_collection = self.ensure_collection(tab.name, parent_id=parent_collection)
+                card_collection = self.ensure_collection(tab.name, parent_id=home_collection)
             for card, planned_card in zip(tab.cards, planned_tab.cards, strict=True):
                 dashcard: dict = {
                     "id": -(len(dashcards) + 1),
@@ -302,7 +312,7 @@ class MetabaseExecution:
             dashboard_id = self._request(
                 "POST",
                 "/api/dashboard",
-                {"name": dashboard.name, "collection_id": parent_collection},
+                {"name": dashboard.name, "collection_id": home_collection},
             )["id"]
         self._request(
             "PUT",
@@ -318,7 +328,7 @@ class MetabaseExecution:
                 "url": f"{self._base_url}/dashboard/{dashboard_id}",
                 "card_ids": card_ids,
                 "tabs": [tab.name for tab in dashboard.tabs],
-                "collection_id": parent_collection,
+                "collection_id": home_collection,
             },
         )
 

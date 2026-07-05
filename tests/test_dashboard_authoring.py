@@ -35,6 +35,34 @@ def _engine(base_url: str) -> Engine:
     return build_engine(profile)
 
 
+def test_authors_into_own_subcollection(metabase_authoring, monkeypatch, tmp_path):
+    base_url, recorder = metabase_authoring
+    monkeypatch.setenv("DI0_TEST_METABASE_KEY", "secret-token")
+
+    (tmp_path / "q.sql").write_text("SELECT customer_id FROM analytics.dim_customers")
+    spec_path = tmp_path / "dash.yml"
+    spec_path.write_text(
+        "name: Account Health\n"
+        "collection_id: 42\n"
+        "own_collection: true\n"
+        "tabs:\n"
+        "  - name: Main\n"
+        "    cards:\n"
+        "      - title: Customers\n"
+        "        query: q.sql\n"
+    )
+
+    spec = DashboardSpec.from_file(spec_path)
+    deliverable = _engine(base_url).author(spec, base_dir=tmp_path)
+
+    # a sub-collection named for the dashboard is created under the parent (fake -> id 701)
+    assert recorder.created_collections == [{"name": "Account Health", "parent_id": 42}]
+    # the dashboard and its card land in that sub-collection, not the parent
+    assert recorder.dashboard["collection_id"] == 701
+    assert recorder.cards[0]["collection_id"] == 701
+    assert deliverable.detail["collection_id"] == 701
+
+
 def test_authors_multi_tab_dashboard(metabase_authoring, monkeypatch, tmp_path):
     base_url, recorder = metabase_authoring
     monkeypatch.setenv("DI0_TEST_METABASE_KEY", "secret-token")

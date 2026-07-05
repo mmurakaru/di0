@@ -63,6 +63,56 @@ def test_authors_into_own_subcollection(metabase_authoring, monkeypatch, tmp_pat
     assert deliverable.detail["collection_id"] == 701
 
 
+def test_authors_dashboard_with_wired_filter(metabase_authoring, monkeypatch, tmp_path):
+    base_url, recorder = metabase_authoring
+    monkeypatch.setenv("DI0_TEST_METABASE_KEY", "secret-token")
+
+    # A parameterized query: the [[ ]] optional block and {{arr}} tag are stripped
+    # for validation, then authored verbatim so the filter has a tag to target.
+    (tmp_path / "arr.sql").write_text(
+        "SELECT customer_id, current_arr FROM analytics.dim_customers "
+        "WHERE [[ current_arr = {{arr}} AND ]] true"
+    )
+    spec_path = tmp_path / "dash.yml"
+    spec_path.write_text(
+        "name: Filtered ARR\n"
+        "collection_id: 42\n"
+        "parameters:\n"
+        "  - name: ARR band\n"
+        "    slug: arr\n"
+        "    type: category\n"
+        "    values: [100, 200]\n"
+        "tabs:\n"
+        "  - name: Main\n"
+        "    cards:\n"
+        "      - title: ARR\n"
+        "        query: arr.sql\n"
+        "        params: {arr: arr}\n"
+    )
+
+    spec = DashboardSpec.from_file(spec_path)
+    _engine(base_url).author(spec, base_dir=tmp_path)
+
+    # 1. the card declares the template tag Metabase filters target, authored verbatim
+    native = recorder.cards[0]["dataset_query"]["native"]
+    assert "arr" in native["template-tags"]
+    assert "{{arr}}" in native["query"]
+
+    # 2. the dashboard carries the filter as a static-list parameter
+    layout = recorder.layout
+    assert len(layout["parameters"]) == 1
+    param = layout["parameters"][0]
+    assert param["slug"] == "arr"
+    assert param["values_source_type"] == "static-list"
+    assert param["values_source_config"]["values"] == [100, 200]
+
+    # 3. the card is wired to the parameter through its template-tag variable
+    dashcard = next(dc for dc in layout["dashcards"] if dc.get("card_id"))
+    mapping = dashcard["parameter_mappings"][0]
+    assert mapping["parameter_id"] == param["id"]
+    assert mapping["target"] == ["variable", ["template-tag", "arr"]]
+
+
 def test_authors_multi_tab_dashboard(metabase_authoring, monkeypatch, tmp_path):
     base_url, recorder = metabase_authoring
     monkeypatch.setenv("DI0_TEST_METABASE_KEY", "secret-token")

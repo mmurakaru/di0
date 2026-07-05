@@ -28,6 +28,7 @@ class CardSpec:
     x_label: str = ""
     y_label: str = ""
     viz: dict = field(default_factory=dict)  # raw visualization_settings pass-through
+    params: dict = field(default_factory=dict)  # dashboard-parameter slug -> query variable name
 
     @property
     def is_text(self) -> bool:
@@ -54,6 +55,7 @@ def _card_from(card: dict) -> CardSpec:
         x_label=card.get("x_label", ""),
         y_label=card.get("y_label", ""),
         viz=dict(card.get("viz", {})),
+        params=dict(card.get("params", {})),
     )
 
 
@@ -65,6 +67,7 @@ class DashboardSpec:
     replace: bool = False  # update an existing same-name dashboard in place (stable URL)
     organize_by_tab: bool = False  # file each tab's cards into a per-tab sub-collection
     own_collection: bool | str = False  # nest dashboard + cards in a sub-collection (name, or True)
+    parameters: tuple[dict, ...] = ()  # dashboard-level filter widgets wired to card variables
 
     @classmethod
     def from_file(cls, path: str | Path) -> DashboardSpec:
@@ -84,6 +87,7 @@ class DashboardSpec:
             replace=bool(data.get("replace", False)),
             organize_by_tab=bool(data.get("organize_by_tab", False)),
             own_collection=data.get("own_collection", False),
+            parameters=tuple(data.get("parameters", []) or []),
         )
 
 
@@ -101,6 +105,7 @@ class ResolvedCard:
     x_label: str = ""
     y_label: str = ""
     viz: dict = field(default_factory=dict)
+    params: dict = field(default_factory=dict)
 
     @property
     def is_text(self) -> bool:
@@ -121,3 +126,4 @@ class ResolvedDashboard:
     replace: bool = False
     organize_by_tab: bool = False
     own_collection: bool | str = False
+    parameters: tuple[dict, ...] = ()

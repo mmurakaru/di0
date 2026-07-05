@@ -9,6 +9,7 @@ physical table, column, or dialect literal.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,6 +32,17 @@ from di0.ports import (
 )
 from di0.profile import Profile
 from di0.reconcile import ReconcileSpec
+
+
+def _validation_form(sql: str) -> str:
+    """Neutralize template variables so a parameterized query still validates.
+
+    Optional ``[[ ... ]]`` blocks are dropped and ``{{var}}`` placeholders become
+    NULL, yielding SQL the validator can parse. The original text is authored, so
+    the tags a dashboard filter wires to are preserved.
+    """
+    without_optional = re.sub(r"\[\[.*?\]\]", " ", sql, flags=re.DOTALL)
+    return re.sub(r"\{\{[^}]+\}\}", "NULL", without_optional)
 
 
 class ValidationFailed(Exception):
@@ -80,8 +92,16 @@ class Engine:
             for card in tab.cards:
                 if card.is_text:
                     composed = ""  # text cards carry no SQL and are not validated
+                elif "{{" in (sql := (root / card.query).read_text()):
+                    # Parameterized card: validate a variable-free form, but author the
+                    # query verbatim so Metabase keeps the tags the filters wire to.
+                    result = self.validation_port.validate(
+                        self.dialect_port.compose(_validation_form(sql)), schema
+                    )
+                    if not result.ok:
+                        raise ValidationFailed(result)
+                    composed = sql
                 else:
-                    sql = (root / card.query).read_text()
                     composed = self.dialect_port.compose(sql)
                     result = self.validation_port.validate(composed, schema)
                     if not result.ok:
@@ -100,6 +120,7 @@ class Engine:
                         x_label=card.x_label,
                         y_label=card.y_label,
                         viz=card.viz,
+                        params=card.params,
                     )
                 )
             resolved_tabs.append(ResolvedTab(name=tab.name, cards=tuple(resolved_cards)))
@@ -110,6 +131,7 @@ class Engine:
             replace=spec.replace,
             organize_by_tab=spec.organize_by_tab,
             own_collection=spec.own_collection,
+            parameters=spec.parameters,
         )
         return self.execution_port.author(dashboard)
 

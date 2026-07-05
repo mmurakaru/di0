@@ -20,9 +20,11 @@ import csv
 import io
 import json
 import os
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 from dataclasses import dataclass, field
 
 from di0.deliverable import ResolvedDashboard
@@ -170,6 +172,63 @@ def _axis_settings(x_label: str, y_label: str) -> dict:
     return settings
 
 
+_TEMPLATE_TAG_RE = re.compile(r"\{\{\s*([\w-]+)\s*\}\}")
+
+
+def _template_tags(sql: str) -> dict:
+    """Declare a native template tag for each ``{{var}}`` in the query.
+
+    Metabase needs the tag declared under ``native.template-tags`` for a dashboard
+    filter to target it. Tag ids are opaque; parameter mappings target by name.
+    """
+    tags: dict = {}
+    for name in dict.fromkeys(_TEMPLATE_TAG_RE.findall(sql)):
+        tags[name] = {
+            "id": str(uuid.uuid4()),
+            "name": name,
+            "display-name": name.replace("_", " ").title(),
+            "type": "text",
+        }
+    return tags
+
+
+def _dashboard_parameters(specs: tuple[dict, ...]) -> tuple[list[dict], dict[str, str]]:
+    """Normalize spec parameters into Metabase params plus a slug -> id map.
+
+    A ``values: [...]`` shorthand becomes a static-list value source; explicit
+    source keys pass through untouched. Missing ids and slugs are filled in.
+    """
+    out: list[dict] = []
+    slug_to_id: dict[str, str] = {}
+    for raw in specs or ():
+        spec = dict(raw)
+        name = spec["name"]
+        slug = spec.get("slug") or name.strip().lower().replace(" ", "_")
+        param_id = spec.get("id") or str(uuid.uuid4())
+        entry: dict = {
+            "id": param_id,
+            "name": name,
+            "slug": slug,
+            "type": spec.get("type", "category"),
+        }
+        if "values" in spec:
+            entry["values_query_type"] = "list"
+            entry["values_source_type"] = "static-list"
+            entry["values_source_config"] = {"values": list(spec["values"])}
+        for key in (
+            "values_query_type",
+            "values_source_type",
+            "values_source_config",
+            "default",
+            "sectionId",
+        ):
+            if key in spec:
+                entry[key] = spec[key]
+        out.append(entry)
+        slug_to_id[slug] = param_id
+    return out, slug_to_id
+
+
 class MetabaseExecution:
     def __init__(
         self,
@@ -277,6 +336,7 @@ class MetabaseExecution:
         if dashboard.replace:
             existing = self._find_existing(dashboard.name, home_collection)
         plan = _plan_dashboard(dashboard, existing)
+        parameters, slug_to_id = _dashboard_parameters(dashboard.parameters)
 
         tabs: list[dict] = []
         dashcards: list[dict] = []
@@ -304,6 +364,17 @@ class MetabaseExecution:
                     card_id = self._write_card(card, card_collection, planned_card.reuse_card_id)
                     card_ids.append(card_id)
                     dashcard["card_id"] = card_id
+                    mappings = [
+                        {
+                            "parameter_id": slug_to_id[slug],
+                            "card_id": card_id,
+                            "target": ["variable", ["template-tag", variable]],
+                        }
+                        for slug, variable in (card.params or {}).items()
+                        if slug in slug_to_id
+                    ]
+                    if mappings:
+                        dashcard["parameter_mappings"] = mappings
                 dashcards.append(dashcard)
 
         if existing:
@@ -317,7 +388,7 @@ class MetabaseExecution:
         self._request(
             "PUT",
             f"/api/dashboard/{dashboard_id}",
-            {"tabs": tabs, "dashcards": dashcards},
+            {"tabs": tabs, "dashcards": dashcards, "parameters": parameters},
         )
         if existing:
             self._archive_cards(plan.archive_card_ids)
@@ -353,6 +424,10 @@ class MetabaseExecution:
         """Create a card, or update the given one in place (reusing its id)."""
         # Axis-label shorthands first, then raw viz pass-through wins on conflict.
         visualization_settings = {**_axis_settings(card.x_label, card.y_label), **card.viz}
+        native: dict = {"query": card.sql}
+        tags = _template_tags(card.sql)
+        if tags:
+            native["template-tags"] = tags
         payload: dict = {
             "name": card.title,
             "display": card.display,
@@ -360,7 +435,7 @@ class MetabaseExecution:
             "dataset_query": {
                 "database": self._database_id,
                 "type": "native",
-                "native": {"query": card.sql},
+                "native": native,
             },
         }
         if card.description:

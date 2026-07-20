@@ -110,6 +110,40 @@ tabs:
   after the tab (created under `collection_id`), keeping the collection navigable;
   the dashboard itself stays in the parent collection.
 
+### Dashboard filters
+
+Wire top-of-dashboard filter widgets to query variables:
+
+```yaml
+parameters:                              # dashboard-level filter widgets
+  - name: Region
+    slug: region
+    type: category                       # category | string/= | number/= | date/all-options | ...
+    values: [emea, apac]                 # optional static dropdown (omit to pull live values)
+    default: emea
+tabs:
+  - name: Overview
+    cards:
+      - title: Customers
+        query: ../queries/customers.sql  # contains a {{region}} template tag
+        params: {region: region}         # dashboard-parameter slug -> query variable
+        field_filters:                   # optional: author {{region}} as a Field Filter
+          region:
+            field_id: 555                # Metabase field id the filter binds to
+            widget_type: string/=        # optional (default string/=)
+```
+
+- **`parameters`** declares the widgets; a `values:` list becomes a static dropdown,
+  otherwise Metabase pulls live values.
+- **`params`** (per card) maps a parameter's `slug` to a `{{variable}}` in that card's
+  SQL. By default the variable is a raw **text** variable (single value). A query with
+  a `{{variable}}` is validated with its `[[ ]]` optional blocks stripped and tags
+  neutralized, then authored verbatim so the tag the filter targets is preserved.
+- **`field_filters`** (per card) promotes a variable to a Metabase **Field Filter**
+  bound to a column (`field_id`), which unlocks **multi-value** selection and
+  auto-populated values. A Field Filter references the column by its real table name,
+  so the query must not alias that table.
+
 ## Live validation
 
 With `validation: explain`, di0 proves each query with `EXPLAIN` over this same

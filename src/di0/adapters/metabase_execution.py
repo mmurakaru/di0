@@ -175,20 +175,31 @@ def _axis_settings(x_label: str, y_label: str) -> dict:
 _TEMPLATE_TAG_RE = re.compile(r"\{\{\s*([\w-]+)\s*\}\}")
 
 
-def _template_tags(sql: str) -> dict:
+def _template_tags(sql: str, field_filters: dict | None = None) -> dict:
     """Declare a native template tag for each ``{{var}}`` in the query.
 
     Metabase needs the tag declared under ``native.template-tags`` for a dashboard
-    filter to target it. Tag ids are opaque; parameter mappings target by name.
+    filter to target it. Tag ids are opaque; parameter mappings target by name. A
+    variable listed in ``field_filters`` is declared as a Field Filter (``dimension``)
+    bound to a real column, which unlocks multi-value filtering; all others are raw
+    ``text`` variables.
     """
+    field_filters = field_filters or {}
     tags: dict = {}
     for name in dict.fromkeys(_TEMPLATE_TAG_RE.findall(sql)):
-        tags[name] = {
+        tag = {
             "id": str(uuid.uuid4()),
             "name": name,
             "display-name": name.replace("_", " ").title(),
-            "type": "text",
         }
+        spec = field_filters.get(name)
+        if spec is not None:
+            tag["type"] = "dimension"
+            tag["dimension"] = ["field", int(spec["field_id"]), None]
+            tag["widget-type"] = spec.get("widget_type", "string/=")
+        else:
+            tag["type"] = "text"
+        tags[name] = tag
     return tags
 
 
@@ -364,11 +375,16 @@ class MetabaseExecution:
                     card_id = self._write_card(card, card_collection, planned_card.reuse_card_id)
                     card_ids.append(card_id)
                     dashcard["card_id"] = card_id
+                    field_filters = card.field_filters or {}
                     mappings = [
                         {
                             "parameter_id": slug_to_id[slug],
                             "card_id": card_id,
-                            "target": ["variable", ["template-tag", variable]],
+                            "target": (
+                                ["dimension", ["template-tag", variable]]
+                                if variable in field_filters
+                                else ["variable", ["template-tag", variable]]
+                            ),
                         }
                         for slug, variable in (card.params or {}).items()
                         if slug in slug_to_id
@@ -425,7 +441,7 @@ class MetabaseExecution:
         # Axis-label shorthands first, then raw viz pass-through wins on conflict.
         visualization_settings = {**_axis_settings(card.x_label, card.y_label), **card.viz}
         native: dict = {"query": card.sql}
-        tags = _template_tags(card.sql)
+        tags = _template_tags(card.sql, card.field_filters)
         if tags:
             native["template-tags"] = tags
         payload: dict = {

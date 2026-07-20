@@ -29,6 +29,9 @@ class CardSpec:
     y_label: str = ""
     viz: dict = field(default_factory=dict)  # raw visualization_settings pass-through
     params: dict = field(default_factory=dict)  # dashboard-parameter slug -> query variable name
+    # query variable name -> {field_id, widget_type} to author it as a Metabase Field Filter
+    # (a `{{var}}` bound to a real column) instead of a raw variable; enables multi-value filters.
+    field_filters: dict = field(default_factory=dict)
 
     @property
     def is_text(self) -> bool:
@@ -56,6 +59,7 @@ def _card_from(card: dict) -> CardSpec:
         y_label=card.get("y_label", ""),
         viz=dict(card.get("viz", {})),
         params=dict(card.get("params", {})),
+        field_filters=dict(card.get("field_filters", {})),
     )
 
 
@@ -106,6 +110,7 @@ class ResolvedCard:
     y_label: str = ""
     viz: dict = field(default_factory=dict)
     params: dict = field(default_factory=dict)
+    field_filters: dict = field(default_factory=dict)
 
     @property
     def is_text(self) -> bool:

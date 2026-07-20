@@ -121,6 +121,7 @@ class Engine:
                         y_label=card.y_label,
                         viz=card.viz,
                         params=card.params,
+                        field_filters=card.field_filters,
                     )
                 )
             resolved_tabs.append(ResolvedTab(name=tab.name, cards=tuple(resolved_cards)))

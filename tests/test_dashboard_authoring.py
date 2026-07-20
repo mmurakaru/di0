@@ -113,6 +113,55 @@ def test_authors_dashboard_with_wired_filter(metabase_authoring, monkeypatch, tm
     assert mapping["target"] == ["variable", ["template-tag", "arr"]]
 
 
+def test_authors_dashboard_with_field_filter(metabase_authoring, monkeypatch, tmp_path):
+    base_url, recorder = metabase_authoring
+    monkeypatch.setenv("DI0_TEST_METABASE_KEY", "secret-token")
+
+    # A variable listed under `field_filters` is authored as a Metabase Field Filter
+    # (a `dimension` tag bound to a column), which is what unlocks multi-value filtering.
+    (tmp_path / "region.sql").write_text(
+        "SELECT customer_id FROM analytics.dim_customers WHERE [[ {{region}} AND ]] true"
+    )
+    spec_path = tmp_path / "dash.yml"
+    spec_path.write_text(
+        "name: Region breakdown\n"
+        "collection_id: 42\n"
+        "parameters:\n"
+        "  - name: Region\n"
+        "    slug: region\n"
+        "    type: string/=\n"
+        "    default: [emea, apac]\n"
+        "tabs:\n"
+        "  - name: Main\n"
+        "    cards:\n"
+        "      - title: Customers\n"
+        "        query: region.sql\n"
+        "        params: {region: region}\n"
+        "        field_filters:\n"
+        "          region:\n"
+        "            field_id: 555\n"
+        "            widget_type: string/=\n"
+    )
+
+    spec = DashboardSpec.from_file(spec_path)
+    _engine(base_url).author(spec, base_dir=tmp_path)
+
+    # 1. the template tag is a Field Filter (dimension) bound to the given column
+    tag = recorder.cards[0]["dataset_query"]["native"]["template-tags"]["region"]
+    assert tag["type"] == "dimension"
+    assert tag["dimension"] == ["field", 555, None]
+    assert tag["widget-type"] == "string/="
+
+    # 2. the card is wired to the parameter through a dimension target (not a raw variable)
+    layout = recorder.layout
+    param = layout["parameters"][0]
+    assert param["type"] == "string/="
+    assert param["default"] == ["emea", "apac"]
+    dashcard = next(dc for dc in layout["dashcards"] if dc.get("card_id"))
+    mapping = dashcard["parameter_mappings"][0]
+    assert mapping["target"] == ["dimension", ["template-tag", "region"]]
+
+
 def test_authors_multi_tab_dashboard(metabase_authoring, monkeypatch, tmp_path):
     base_url, recorder = metabase_authoring
     monkeypatch.setenv("DI0_TEST_METABASE_KEY", "secret-token")

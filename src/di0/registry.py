@@ -18,6 +18,7 @@ from di0.adapters.http_rows_execution import HttpRowsExecution
 from di0.adapters.lightdash_execution import LightdashExecution
 from di0.adapters.metabase_execution import MetabaseExecution
 from di0.adapters.noop_execution import NoopExecution
+from di0.adapters.policy_validation import PolicyValidation, load_policy
 from di0.adapters.sqlglot_dialect import SqlglotDialect
 from di0.adapters.sqlglot_validation import SqlglotOfflineValidation
 from di0.adapters.strapi_schema import StrapiContentTypeSchema
@@ -57,8 +58,8 @@ def build_dialect_port(profile: Profile) -> DialectPort:
     return SqlglotDialect(profile.dialect)
 
 
-def build_validation_port(
-    profile: Profile, execution_port: ExecutionPort | None = None
+def _build_base_validation_port(
+    profile: Profile, execution_port: ExecutionPort | None
 ) -> ValidationPort:
     if profile.validation == "sqlglot-offline":
         return SqlglotOfflineValidation(profile.dialect)
@@ -70,6 +71,18 @@ def build_validation_port(
             )
         return ExplainValidation(execution_port)
     raise ValueError(f"unknown validation tier: {profile.validation}")
+
+
+def build_validation_port(
+    profile: Profile, execution_port: ExecutionPort | None = None
+) -> ValidationPort:
+    base = _build_base_validation_port(profile, execution_port)
+    # Policy is opt-in: with no `policy` key the base validator is returned as-is, so
+    # behaviour is unchanged. A `policy` key wraps it in the composite gate.
+    policy_path = profile.options.get("policy")
+    if not policy_path:
+        return base
+    return PolicyValidation(base, load_policy(str(policy_path)), profile.dialect)
 
 
 def build_execution_port(profile: Profile) -> ExecutionPort:

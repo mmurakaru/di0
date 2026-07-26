@@ -29,11 +29,13 @@ EX_OK = 0
 EX_USAGE = 64  # argparse / bad arguments
 EX_DATAERR = 65  # validation failure, unknown reference, guard violation
 EX_UNAVAILABLE = 69  # execution / adapter / target runtime error, unsupported capability
+EX_NOPERM = 77  # a configured policy denied an otherwise-valid query
 EX_SOFTWARE = 70  # unexpected internal exception (a bug in di0)
 EX_CONFIG = 78  # profile / config load error
 
 # HTTP-style codes carried in the error object.
 HTTP_BAD_REQUEST = 400
+HTTP_FORBIDDEN = 403
 HTTP_NOT_FOUND = 404
 HTTP_UNPROCESSABLE = 422
 HTTP_INTERNAL = 500
@@ -87,6 +89,13 @@ def validation_failure(
     return Failure(EX_DATAERR, error_object(HTTP_UNPROCESSABLE, message, suggestions, detail))
 
 
+def policy_failure(errors: list[str], detail: dict | None = None) -> Failure:
+    """A configured policy denied an otherwise schema-valid query (forbidden, not invalid)."""
+    message = "; ".join(errors) or "policy denied"
+    detail = {"errors": list(errors)} if detail is None else detail
+    return Failure(EX_NOPERM, error_object(HTTP_FORBIDDEN, message, (), detail))
+
+
 def reference_failure(message: str, detail: dict | None = None) -> Failure:
     """An unknown reference (e.g. a reconcile query naming an unknown source)."""
     return Failure(EX_DATAERR, error_object(HTTP_UNPROCESSABLE, message, (), detail))
@@ -138,6 +147,8 @@ def classify(exc: BaseException, default: str = "internal") -> Failure:
     ("execution" once a target is being driven, "config" while loading input).
     """
     if isinstance(exc, ValidationFailed):
+        if exc.result.denied:
+            return policy_failure(list(exc.result.errors))
         return validation_failure(list(exc.result.errors))
     if isinstance(exc, (AuthoringUnsupported, CapabilityError)):
         # Same bucket: the adapter cannot produce the requested deliverable.

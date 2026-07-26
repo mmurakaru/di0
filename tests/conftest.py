@@ -19,6 +19,18 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def isolate_audit_ledger(tmp_path_factory, monkeypatch):
+    """Keep the on-by-default provenance ledger out of the repo during tests.
+
+    `build_engine` attaches a real ledger writing under `<DI0_WORKSPACE or cwd>`;
+    point that at a throwaway temp dir so tests never write into the working tree.
+    Tests that assert on the ledger location set `DI0_WORKSPACE` themselves, which
+    overrides this default.
+    """
+    monkeypatch.setenv("DI0_WORKSPACE", str(tmp_path_factory.mktemp("di0-workspace")))
+
+
 @pytest.fixture
 def start_http_server():
     """Factory fixture: start_http_server(handler_cls) -> base_url.

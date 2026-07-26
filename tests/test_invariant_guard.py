@@ -132,7 +132,7 @@ def test_guard_command_fails_when_a_driver_is_declared(tmp_path, capsys):
     )
     exit_code = cli.main(["guard", "--path", str(CORE), "--pyproject", str(pyproject)])
     captured = capsys.readouterr()
-    assert exit_code == 1
+    assert exit_code == cli.cliio.EX_DATAERR  # guard violation -> EX_DATAERR (was 1)
     assert "psycopg" in captured.err
 
 

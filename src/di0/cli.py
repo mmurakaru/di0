@@ -13,7 +13,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from di0 import cliio, core
+from di0 import cliio, core, doctor
 from di0.core import Engine, ValidationFailed
 from di0.deliverable import DashboardSpec
 from di0.guard import DEFAULT_PYPROJECT
@@ -26,8 +26,21 @@ from di0.registry import build_combine_port, build_engine
 # with DI0_WORKSPACE. Scaffold it from the committed `examples/` template via `di0 init`.
 EXAMPLES_DIR = "examples"
 
+# Commented starter content, shipped inside the package so `init` can scaffold a
+# self-explanatory workspace even when run outside the repo (no `examples/` dir).
+_STARTER_TEMPLATES = Path(__file__).parent / "templates"
+
 # The verbs that speak the machine-readable contract (init scaffolds, so is exempt).
-_CONTRACT_COMMANDS = ("schema", "guard", "validate", "query", "check", "reconcile", "author")
+_CONTRACT_COMMANDS = (
+    "schema",
+    "guard",
+    "validate",
+    "query",
+    "check",
+    "reconcile",
+    "author",
+    "doctor",
+)
 
 
 def _workspace() -> Path:
@@ -194,6 +207,32 @@ def _cmd_author(args: argparse.Namespace) -> int:
     return 0
 
 
+def _scaffold_starter(workspace: Path) -> bool:
+    """Fill a profile-less workspace with commented starter files.
+
+    Copies the packaged starter template (a commented profile, a sample query,
+    and a sample deliverable spec) only when the workspace has no profile yet, so
+    an existing or template-copied profile is never overwritten. Returns whether
+    starter files were written.
+    """
+    if (workspace / DEFAULT_PROFILE_NAME).exists() or not _STARTER_TEMPLATES.is_dir():
+        return False
+    shutil.copytree(_STARTER_TEMPLATES, workspace, dirs_exist_ok=True)
+    return True
+
+
+def _print_init_guidance(workspace: Path, scaffolded: bool) -> None:
+    profile = workspace / DEFAULT_PROFILE_NAME
+    print("\nNext steps:")
+    if scaffolded:
+        print(f"  1. Open {profile} and set the schema source, dialect, and execution target.")
+    else:
+        print(f"  1. Review {profile} and adjust the schema source, dialect, and execution target.")
+    print("  2. Keep credentials out of the profile: it names an environment variable that")
+    print("     holds each secret. Export those variables in your shell before running di0.")
+    print(f"  3. Run `di0 doctor --profile {profile}` to verify the setup end to end.")
+
+
 def _cmd_init(args: argparse.Namespace) -> int:
     workspace = _workspace()
     template = Path(args.template)
@@ -204,6 +243,9 @@ def _cmd_init(args: argparse.Namespace) -> int:
         for sub in ("queries", "context"):
             (workspace / sub).mkdir(parents=True, exist_ok=True)
         made = f"created empty {workspace}/ (no {template}/ template found)"
+    scaffolded = _scaffold_starter(workspace)
+    if scaffolded:
+        made += ", with a commented starter profile, query, and spec"
     # Only gitignore an in-repo workspace; an external (absolute) one needs no entry.
     gitignore = Path(".gitignore")
     entry = f"/{workspace}/"
@@ -211,7 +253,46 @@ def _cmd_init(args: argparse.Namespace) -> int:
         with gitignore.open("a") as handle:
             handle.write(f"\n{entry}\n")
     print(f"{made}. Drop your queries/profiles/specs there; it is gitignored.")
+    _print_init_guidance(workspace, scaffolded)
     return 0
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    json_mode = cliio.is_json(args)
+    report = doctor.run_checks(args.profile, probe=args.probe)
+    data = {
+        "checks": [
+            {
+                "name": check.name,
+                "passed": check.passed,
+                "detail": check.detail,
+                "hint": check.hint,
+            }
+            for check in report.checks
+        ]
+    }
+    category = report.exit_category
+    if json_mode:
+        if category is None:
+            return cliio.emit_ok("doctor", data)
+        failed = [check.name for check in report.checks if not check.passed]
+        message = f"{len(failed)} check(s) failed: {', '.join(failed)}"
+        failure = (
+            cliio.config_failure(message)
+            if category == doctor.CATEGORY_CONFIG
+            else cliio.execution_failure(message)
+        )
+        return cliio.emit_failure("doctor", failure, data=data)
+    for check in report.checks:
+        mark = "PASS" if check.passed else "FAIL"
+        print(f"[{mark}] {check.name}: {check.detail}")
+        if not check.passed and check.hint:
+            print(f"       fix: {check.hint}")
+    if category is None:
+        print("\nAll checks passed. Your setup is ready.")
+        return cliio.EX_OK
+    print("\nSome checks failed - see the fix hints above.", file=sys.stderr)
+    return cliio.EX_CONFIG if category == doctor.CATEGORY_CONFIG else cliio.EX_UNAVAILABLE
 
 
 def _cmd_reconcile(args: argparse.Namespace) -> int:
@@ -367,6 +448,19 @@ def _build_parser() -> argparse.ArgumentParser:
         help="archive an existing same-name dashboard in the collection first",
     )
     author.set_defaults(func=_cmd_author)
+
+    doctor_cmd = sub.add_parser(
+        "doctor", parents=[fmt], help="diagnose the profile, schema, credentials, and target"
+    )
+    # Also accept --profile after the verb, so `di0 doctor --profile X` just works.
+    # SUPPRESS keeps the subparser from clobbering a global `--profile` given first.
+    doctor_cmd.add_argument(
+        "--profile", default=argparse.SUPPRESS, help="path to the profile to diagnose"
+    )
+    doctor_cmd.add_argument(
+        "--probe", action="store_true", help="also probe the execution target for connectivity"
+    )
+    doctor_cmd.set_defaults(func=_cmd_doctor)
 
     return parser
 

@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from di0.audit import Audit, NullAudit, build_record
 from di0.deliverable import (
     DashboardSpec,
     ResolvedCard,
@@ -28,6 +29,7 @@ from di0.ports import (
     DialectPort,
     ExecutionPort,
     QueryResult,
+    Schema,
     SchemaPort,
     ValidationPort,
     ValidationResult,
@@ -100,18 +102,59 @@ class Engine:
     dialect_port: DialectPort
     validation_port: ValidationPort
     execution_port: ExecutionPort
+    # Off by default at the dataclass level: a raw ``Engine(...)`` records nothing,
+    # so every existing construction is unaffected. The registry attaches a real
+    # ledger for the CLI/normal path.
+    audit: Audit = field(default_factory=NullAudit)
 
-    def validate(self, sql: str) -> ValidationResult:
+    def _resolve_and_validate(self, sql: str) -> tuple[str, Schema, ValidationResult]:
+        """The shared, unlogged core of validate/query: compose, resolve, validate."""
         composed = self.dialect_port.compose(sql)
         schema = self.schema_port.resolve()
-        return self.validation_port.validate(composed, schema)
+        return composed, schema, self.validation_port.validate(composed, schema)
+
+    def _record(
+        self,
+        event: str,
+        original_sql: str,
+        composed_sql: str,
+        schema: Schema | None,
+        result: ValidationResult,
+        outcome: dict | None = None,
+    ) -> None:
+        """Append one provenance entry. Never raises: provenance is not the operation."""
+        if isinstance(self.audit, NullAudit):
+            return  # the default sink does nothing; skip the record entirely
+        try:
+            self.audit.append(
+                build_record(
+                    event=event,
+                    original_sql=original_sql,
+                    composed_sql=composed_sql,
+                    schema=schema,
+                    validation=result,
+                    target=type(self.execution_port).__name__,
+                    outcome=outcome,
+                )
+            )
+        except Exception:  # noqa: BLE001 - a ledger failure must never fail an operation
+            pass
+
+    def validate(self, sql: str) -> ValidationResult:
+        composed, schema, result = self._resolve_and_validate(sql)
+        self._record("validate", sql, composed, schema, result)
+        return result
 
     def query(self, sql: str) -> QueryResult:
-        result = self.validate(sql)
+        # Runs the validation core directly (not the public validate) so a query
+        # logs exactly one "query" entry, never a stray "validate" one too.
+        composed, schema, result = self._resolve_and_validate(sql)
         if not result.ok:
+            self._record("query", sql, composed, schema, result)
             raise ValidationFailed(result)
-        composed = self.dialect_port.compose(sql)
-        return self.execution_port.execute(composed)
+        output = self.execution_port.execute(composed)
+        self._record("query", sql, composed, schema, result, outcome={"rows": len(output.rows)})
+        return output
 
     def author(self, spec: DashboardSpec, base_dir: Path | None = None) -> Deliverable:
         """Validate every query in a dashboard spec, then author the artifact.
@@ -125,6 +168,8 @@ class Engine:
             )
         root = Path(base_dir) if base_dir is not None else Path.cwd()
         schema = self.schema_port.resolve()
+        original_sqls: list[str] = []
+        composed_sqls: list[str] = []
         resolved_tabs: list[ResolvedTab] = []
         for tab in spec.tabs:
             resolved_cards: list[ResolvedCard] = []
@@ -145,6 +190,9 @@ class Engine:
                     result = self.validation_port.validate(composed, schema)
                     if not result.ok:
                         raise ValidationFailed(result)
+                if not card.is_text:
+                    original_sqls.append(sql)
+                    composed_sqls.append(composed)
                 resolved_cards.append(
                     ResolvedCard(
                         title=card.title,
@@ -184,7 +232,18 @@ class Engine:
         gaps = _capability_gaps(dashboard, capabilities)
         if gaps:
             raise CapabilityError(tuple(gaps))
-        return self.execution_port.author(dashboard)
+        deliverable = self.execution_port.author(dashboard)
+        # One record for the whole authored deliverable: its queries validated, so
+        # record an ok verdict and the artifact id as the outcome (never row data).
+        self._record(
+            "author",
+            "\n".join(original_sqls),
+            "\n".join(composed_sqls),
+            schema,
+            ValidationResult(ok=True),
+            outcome={"kind": deliverable.kind, "identifier": deliverable.identifier},
+        )
+        return deliverable
 
     def validate_paths(self, paths: list[Path]) -> list[tuple[Path, ValidationResult]]:
         """Validate every SQL file against the schema, resolved once.

@@ -19,7 +19,7 @@ from di0.deliverable import DashboardSpec
 from di0.guard import DEFAULT_PYPROJECT
 from di0.profile import DEFAULT_PROFILE_NAME, load_profile
 from di0.reconcile import ReconcileSpec
-from di0.registry import build_combine_port, build_engine
+from di0.registry import build_combine_port, build_engine, default_audit_path
 
 # Your private content (queries, profiles, specs) lives in a workspace directory,
 # gitignored so nothing private is ever committed. Default `./workspace`; override
@@ -41,6 +41,7 @@ _CONTRACT_COMMANDS = (
     "author",
     "doctor",
     "conformance",
+    "audit",
 )
 
 
@@ -413,6 +414,33 @@ def _cmd_conformance(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_audit(args: argparse.Namespace) -> int:
+    from di0.audit import verify
+
+    json_mode = cliio.is_json(args)
+    path = Path(args.path) if args.path else default_audit_path()
+    result = verify(path)
+    data = {
+        "path": str(path),
+        "entries": result.entries,
+        "broken_at": result.broken_at,
+        "reason": result.reason,
+    }
+    if result.ok:
+        if json_mode:
+            return cliio.emit_ok("audit", data)
+        print(f"OK: ledger chain intact ({result.entries} entries)")
+        return cliio.EX_OK
+    message = f"ledger chain broken at entry {result.broken_at}: {result.reason}"
+    failure = cliio.Failure(
+        cliio.EX_DATAERR, cliio.error_object(cliio.HTTP_UNPROCESSABLE, message, (), data)
+    )
+    if json_mode:
+        return cliio.emit_failure("audit", failure, data=data)
+    print(f"BROKEN: {message}", file=sys.stderr)
+    return failure.exit_code
+
+
 def _format_parent() -> argparse.ArgumentParser:
     """The shared `--format {text,json}` / `--json` options, added to every verb."""
     parent = argparse.ArgumentParser(add_help=False)
@@ -520,6 +548,18 @@ def _build_parser() -> argparse.ArgumentParser:
         "--sql", default="SELECT 1", help="sample SQL the checks probe the adapter with"
     )
     conformance_cmd.set_defaults(func=_cmd_conformance)
+
+    audit_cmd = sub.add_parser("audit", help="inspect the local provenance ledger")
+    audit_sub = audit_cmd.add_subparsers(dest="audit_command", required=True)
+    verify_cmd = audit_sub.add_parser(
+        "verify", parents=[fmt], help="check the ledger's hash chain is intact"
+    )
+    verify_cmd.add_argument(
+        "--path",
+        default=None,
+        help="path to the ledger (default: <DI0_WORKSPACE or cwd>/.di0/audit/audit.jsonl)",
+    )
+    verify_cmd.set_defaults(func=_cmd_audit)
 
     return parser
 

@@ -7,6 +7,9 @@ they ask the registry for ports and use them abstractly.
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from di0.adapters.dbt_manifest import DbtManifestSchema
 from di0.adapters.drizzle_schema import DrizzleSnapshotSchema
 from di0.adapters.duckdb_combine import DuckdbCombine
@@ -18,6 +21,7 @@ from di0.adapters.noop_execution import NoopExecution
 from di0.adapters.sqlglot_dialect import SqlglotDialect
 from di0.adapters.sqlglot_validation import SqlglotOfflineValidation
 from di0.adapters.strapi_schema import StrapiContentTypeSchema
+from di0.audit import Audit, AuditLedger, NullAudit
 from di0.core import Engine
 from di0.ports import CombinePort, DialectPort, ExecutionPort, SchemaPort, ValidationPort
 from di0.profile import Profile
@@ -117,6 +121,20 @@ def build_combine_port() -> CombinePort:
     return DuckdbCombine()
 
 
+def default_audit_path() -> Path:
+    """The on-by-default ledger location: under DI0_WORKSPACE, else the cwd."""
+    root = os.environ.get("DI0_WORKSPACE") or os.getcwd()
+    return Path(root) / ".di0" / "audit" / "audit.jsonl"
+
+
+def build_audit(profile: Profile) -> Audit:
+    """A real ledger by default; ``audit: false`` disables it, ``audit_path`` moves it."""
+    if profile.options.get("audit", True) is False:
+        return NullAudit()
+    override = profile.options.get("audit_path")
+    return AuditLedger(Path(str(override)) if override else default_audit_path())
+
+
 def build_engine(profile: Profile) -> Engine:
     execution_port = build_execution_port(profile)
     return Engine(
@@ -124,4 +142,5 @@ def build_engine(profile: Profile) -> Engine:
         dialect_port=build_dialect_port(profile),
         validation_port=build_validation_port(profile, execution_port),
         execution_port=execution_port,
+        audit=build_audit(profile),
     )

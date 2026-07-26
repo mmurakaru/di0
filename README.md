@@ -5,6 +5,10 @@ and build dashboards while owning **zero schema knowledge**: every table, column
 join, and metric is resolved live from a schema source, and every query is
 validated against that schema before it runs.
 
+di0 never holds your database credentials and never opens a connection to your
+warehouse. It proves every query against your declared schema, then hands it to a
+system you already trust.
+
 ## The principle
 
 Hard-coding physical table and column names into application code is the kind of
@@ -22,6 +26,13 @@ resolve refs (SchemaPort) -> compose SQL (DialectPort)
 For questions that span sources in different systems, di0 also does
 [cross-source reconcile](docs/reconcile.md): fetch reduced results per source, then
 join them locally.
+
+## What di0 never does
+
+- **Stores or transmits credentials** - they stay in env vars the adapter reads.
+- **Connects to your warehouse directly** - execution goes through a system that already fronts it.
+- **Phones home** - di0 makes no network calls of its own; no telemetry.
+- **Hard-codes schema** - every table and column is resolved from your schema source and validated first.
 
 ## Ports and adapters
 

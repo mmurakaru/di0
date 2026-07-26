@@ -89,9 +89,17 @@ def _cmd_validate(args: argparse.Namespace) -> int:
         print("OK")
         return 0
     errors = list(result.errors)
+    data = {"valid": False, "errors": errors}
+    if result.denied:
+        # A policy denial: the query is well-formed and resolves, but forbidden.
+        if json_mode:
+            return cliio.emit_failure("validate", cliio.policy_failure(errors), data=data)
+        for error in errors:
+            print(f"DENIED: {error}", file=sys.stderr)
+        return cliio.EX_NOPERM
     if json_mode:
         failure = cliio.validation_failure(errors, schema=_resolved_schema(engine))
-        return cliio.emit_failure("validate", failure, data={"valid": False, "errors": errors})
+        return cliio.emit_failure("validate", failure, data=data)
     for error in errors:
         print(f"INVALID: {error}", file=sys.stderr)
     return cliio.EX_DATAERR

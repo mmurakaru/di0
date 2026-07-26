@@ -19,6 +19,10 @@ Schema = dict[str, dict[str, dict[str, str]]]
 class ValidationResult:
     ok: bool
     errors: tuple[str, ...] = ()
+    # A denial is a policy refusal, not a schema-invalidity: the query is well-formed
+    # and resolves, but a configured policy forbids it. Last field with a default, so
+    # every existing construction is unaffected and a plain result is never a denial.
+    denied: bool = False
 
 
 @dataclass(frozen=True)

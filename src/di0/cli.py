@@ -40,6 +40,7 @@ _CONTRACT_COMMANDS = (
     "reconcile",
     "author",
     "doctor",
+    "conformance",
 )
 
 
@@ -369,6 +370,49 @@ def _cmd_check(args: argparse.Namespace) -> int:
     return cliio.EX_DATAERR if failed else 0
 
 
+def _cmd_conformance(args: argparse.Namespace) -> int:
+    from di0.testing import conformance
+
+    json_mode = cliio.is_json(args)
+    try:
+        adapter = conformance.load_adapter(args.adapter)
+        outcomes = conformance.run_cli_checks(adapter, sql=args.sql)
+    except Exception as error:  # noqa: BLE001 - classified centrally (bad reference/import)
+        return cliio.handle_exception("conformance", error, json_mode, default="config")
+    data = {
+        "adapter": args.adapter,
+        "checks": [
+            {"port": outcome.port, "passed": outcome.passed, "detail": outcome.detail}
+            for outcome in outcomes
+        ],
+    }
+    failed = [outcome for outcome in outcomes if not outcome.passed]
+    if failed:
+        message = (
+            f"{len(failed)} port check(s) failed: "
+            + ", ".join(outcome.port for outcome in failed)
+        )
+        failure = cliio.Failure(
+            cliio.EX_DATAERR,
+            cliio.error_object(
+                cliio.HTTP_UNPROCESSABLE, message, (), {"failed": [o.port for o in failed]}
+            ),
+        )
+        if json_mode:
+            return cliio.emit_failure("conformance", failure, data=data)
+        for outcome in outcomes:
+            mark = "PASS" if outcome.passed else "FAIL"
+            print(f"{mark} {outcome.port}: {outcome.detail}", file=sys.stderr)
+        print(f"\n{message}", file=sys.stderr)
+        return failure.exit_code
+    if json_mode:
+        return cliio.emit_ok("conformance", data)
+    for outcome in outcomes:
+        print(f"PASS {outcome.port}: {outcome.detail}")
+    print(f"\n{len(outcomes)}/{len(outcomes)} port check(s) passed")
+    return 0
+
+
 def _format_parent() -> argparse.ArgumentParser:
     """The shared `--format {text,json}` / `--json` options, added to every verb."""
     parent = argparse.ArgumentParser(add_help=False)
@@ -461,6 +505,21 @@ def _build_parser() -> argparse.ArgumentParser:
         "--probe", action="store_true", help="also probe the execution target for connectivity"
     )
     doctor_cmd.set_defaults(func=_cmd_doctor)
+
+    conformance_cmd = sub.add_parser(
+        "conformance",
+        parents=[fmt],
+        help="run a port's contract checks against an adapter imported by reference",
+    )
+    conformance_cmd.add_argument(
+        "--adapter",
+        required=True,
+        help="adapter reference: module:attribute (a class or zero-argument factory)",
+    )
+    conformance_cmd.add_argument(
+        "--sql", default="SELECT 1", help="sample SQL the checks probe the adapter with"
+    )
+    conformance_cmd.set_defaults(func=_cmd_conformance)
 
     return parser
 

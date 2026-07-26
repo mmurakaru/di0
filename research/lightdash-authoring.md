@@ -30,7 +30,7 @@ All endpoints are project-scoped; the adapter needs a `projectUuid` the way the 
 `POST /api/v1/projects/{projectUuid}/spaces`
 
 ```json
-{ "name": "Growth", "parentSpaceUuid": null, "access": [] }
+{ "name": "Revenue Overview", "parentSpaceUuid": null, "access": [] }
 ```
 
 Spaces nest via `parentSpaceUuid`, which covers di0's `own_collection` / `organize_by_tab` sub-collection behavior.

@@ -1,0 +1,36 @@
+# di0 profile - the single file where your warehouse, dialect, schema source,
+# and execution target are named. Everything else in di0 reads these as opaque
+# strings, so swapping a target here never changes a query or a skill.
+#
+# Edit the values below for your setup, then run `di0 doctor` to verify it.
+
+# schema_source: where di0 resolves your tables and columns from, offline. Set
+# the path/option your chosen source needs (see docs/ for the supported sources).
+schema_source: dbt-manifest
+manifest_path: ./schema/manifest.json
+
+# dialect: the SQL dialect your queries target.
+dialect: snowflake
+
+# validation: how a query is proven before it may run. `sqlglot-offline` checks
+# every table and column against the resolved schema with no network access.
+validation: sqlglot-offline
+
+# execution: where validated queries run. `noop` resolves, composes, and
+# validates but runs nothing - a safe default for offline checking. Point this
+# at your BI target to actually execute queries or author dashboards.
+execution: noop
+
+# Credentials are NEVER written in this file. Instead, an execution target names
+# the ENVIRONMENT VARIABLE that holds its secret, and you export that variable in
+# your shell. For example, a BI target might add:
+#
+#   execution: my-bi-tool
+#   my_bi_tool_url: https://bi.example.com
+#   my_bi_tool_api_key_env: DI0_MY_BI_TOOL_KEY   # the NAME of the env var, not the key
+#
+# then, before running di0:
+#
+#   export DI0_MY_BI_TOOL_KEY=...
+#
+# `di0 doctor` reports any credential env var named here that is not set.

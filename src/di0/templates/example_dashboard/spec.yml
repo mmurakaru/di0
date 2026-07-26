@@ -1,0 +1,13 @@
+# A sample deliverable spec: a dashboard built only from validated queries.
+# Author it against a BI execution target with:
+#   di0 author example_dashboard/spec.yml
+# (the default `execution: noop` profile validates the spec but authors nothing).
+name: Example Dashboard
+tabs:
+  - name: Overview
+    cards:
+      - title: Customers by ARR
+        query: customers_by_arr.sql
+        display: table
+        size_x: 12
+        size_y: 8

@@ -16,6 +16,7 @@ from pathlib import Path
 from di0 import core
 from di0.core import AuthoringUnsupported, Engine, ValidationFailed
 from di0.deliverable import DashboardSpec
+from di0.guard import DEFAULT_PYPROJECT
 from di0.profile import DEFAULT_PROFILE_NAME, load_profile
 from di0.reconcile import ReconcileSpec
 from di0.registry import build_combine_port, build_engine
@@ -72,9 +73,12 @@ def _cmd_query(args: argparse.Namespace) -> int:
 
 
 def _cmd_guard(args: argparse.Namespace) -> int:
-    from di0.guard import scan_tree
+    from di0.guard import driver_dependency_violations, scan_tree
 
-    violations = scan_tree(Path(args.path))
+    violations = list(scan_tree(Path(args.path)))
+    pyproject = Path(args.pyproject)
+    if pyproject.exists():
+        violations.extend(driver_dependency_violations(pyproject))
     for violation in violations:
         snippet = violation.literal.splitlines()[0][:60]
         print(
@@ -84,7 +88,7 @@ def _cmd_guard(args: argparse.Namespace) -> int:
     if violations:
         print(f"\n{len(violations)} invariant violation(s)", file=sys.stderr)
         return 1
-    print("core holds no warehouse, dialect, or physical reference")
+    print("core holds no warehouse, dialect, or physical reference; no driver dependencies")
     return 0
 
 
@@ -187,8 +191,13 @@ def main(argv: list[str] | None = None) -> int:
     schema = sub.add_parser("schema", help="resolve and print the schema as JSON")
     schema.set_defaults(func=_cmd_schema)
 
-    guard = sub.add_parser("guard", help="fail if the core names a warehouse/dialect/table")
+    guard = sub.add_parser(
+        "guard", help="fail if the core names a warehouse/dialect/table or declares a driver"
+    )
     guard.add_argument("--path", default="src/di0", help="core package to scan")
+    guard.add_argument(
+        "--pyproject", default=DEFAULT_PYPROJECT, help="project metadata scanned for driver deps"
+    )
     guard.set_defaults(func=_cmd_guard)
 
     validate = sub.add_parser("validate", help="validate SQL (literal or path) against the schema")

@@ -132,3 +132,107 @@ def metabase_authoring(start_http_server):
     recorder = AuthoringRecorder()
     base_url = start_http_server(metabase_authoring_handler(recorder))
     return base_url, recorder
+
+
+def _slug(text: str) -> str:
+    """A crude slug, matching how the adapter slugifies names, for fake responses."""
+    import re
+
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-") or "untitled"
+
+
+@dataclass
+class LightdashRecorder:
+    """Records requests against the fake Lightdash backend below.
+
+    Outputs are populated as requests arrive; `spaces`, `query_columns`, and
+    `query_rows` are inputs a test seeds before calling `execute`/`author`, to
+    control what the fake GET/query endpoints return.
+    """
+
+    charts: list[dict] = field(default_factory=list)
+    created_spaces: list[dict] = field(default_factory=list)
+    spaces: list[dict] = field(default_factory=list)
+    dashboard: dict | None = None
+    dashboard_path: str | None = None
+    upserted_dashboard: dict | None = None
+    upsert_path: str | None = None
+    queries: list[dict] = field(default_factory=list)
+    query_columns: list = field(default_factory=list)
+    query_rows: list = field(default_factory=list)
+    auth_header: str | None = None
+
+
+def lightdash_handler(recorder: LightdashRecorder) -> type[BaseHTTPRequestHandler]:
+    """A fake Lightdash backend covering the SQL-runner query and authoring surfaces.
+
+    Every response follows Lightdash's `{ "results": ... }` envelope. Shared by
+    every test that exercises `LightdashExecution`.
+    """
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args: object) -> None:  # noqa: ARG002 - silence test server logging
+            pass
+
+        def _body(self) -> dict:
+            length = int(self.headers.get("Content-Length", 0))
+            return json.loads(self.rfile.read(length) or b"{}")
+
+        def _send(self, results: object) -> None:
+            payload = json.dumps({"status": "ok", "results": results}).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def do_GET(self) -> None:  # noqa: N802 - http.server API
+            recorder.auth_header = self.headers.get("Authorization")
+            if "/query/" in self.path:  # fetch SQL results (already "ready")
+                self._send(
+                    {
+                        "status": "ready",
+                        "columns": recorder.query_columns,
+                        "rows": recorder.query_rows,
+                    }
+                )
+            elif self.path.endswith("/spaces"):
+                self._send(recorder.spaces)
+            else:
+                self._send([])
+
+        def do_POST(self) -> None:  # noqa: N802 - http.server API
+            recorder.auth_header = self.headers.get("Authorization")
+            body = self._body()
+            if self.path.endswith("/query/sql"):
+                recorder.queries.append(body)
+                self._send({"queryUuid": "query-1"})
+            elif self.path.endswith("/sqlRunner/saved"):
+                recorder.charts.append(body)
+                number = len(recorder.charts)
+                self._send({"savedSqlUuid": f"chart-{number}", "slug": body.get("slug")})
+            elif self.path.endswith("/spaces"):
+                recorder.created_spaces.append(body)
+                name = body.get("name", "")
+                number = len(recorder.created_spaces)
+                self._send({"uuid": f"space-{number}", "slug": _slug(name), "name": name})
+            elif "/code/dashboards/" in self.path:  # as-code slug upsert
+                recorder.upserted_dashboard = body
+                recorder.upsert_path = self.path
+                self._send({"slug": self.path.rsplit("/", 1)[-1]})
+            elif self.path.endswith("/dashboards"):
+                recorder.dashboard = body
+                recorder.dashboard_path = self.path
+                self._send({"uuid": "dashboard-1", "slug": _slug(body.get("name", ""))})
+            else:
+                self._send({})
+
+    return Handler
+
+
+@pytest.fixture
+def lightdash_backend(start_http_server):
+    """A running fake Lightdash backend: yields (base_url, recorder)."""
+    recorder = LightdashRecorder()
+    base_url = start_http_server(lightdash_handler(recorder))
+    return base_url, recorder

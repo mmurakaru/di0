@@ -12,6 +12,7 @@ from di0.adapters.drizzle_schema import DrizzleSnapshotSchema
 from di0.adapters.duckdb_combine import DuckdbCombine
 from di0.adapters.explain_validation import ExplainValidation
 from di0.adapters.http_rows_execution import HttpRowsExecution
+from di0.adapters.lightdash_execution import LightdashExecution
 from di0.adapters.metabase_execution import MetabaseExecution
 from di0.adapters.noop_execution import NoopExecution
 from di0.adapters.sqlglot_dialect import SqlglotDialect
@@ -88,6 +89,20 @@ def build_execution_port(profile: Profile) -> ExecutionPort:
         if profile.options.get("metabase_collection") is not None:
             kwargs["default_collection_id"] = int(profile.options["metabase_collection"])
         return MetabaseExecution(str(base_url), int(database_id), **kwargs)
+    if profile.execution == "lightdash":
+        base_url = profile.options.get("lightdash_url")
+        project_uuid = profile.options.get("lightdash_project_uuid")
+        if not base_url or not project_uuid:
+            raise ValueError(
+                "lightdash execution requires `lightdash_url` and `lightdash_project_uuid` "
+                "in the profile"
+            )
+        kwargs = {}
+        if profile.options.get("lightdash_api_key_env"):
+            kwargs["api_key_env"] = str(profile.options["lightdash_api_key_env"])
+        if profile.options.get("lightdash_space"):
+            kwargs["default_space"] = str(profile.options["lightdash_space"])
+        return LightdashExecution(str(base_url), str(project_uuid), **kwargs)
     if profile.execution == "http-rows":
         base_url = profile.options.get("rows_url")
         if not base_url:

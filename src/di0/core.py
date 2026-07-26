@@ -21,6 +21,8 @@ from di0.deliverable import (
     ResolvedTab,
 )
 from di0.ports import (
+    DEFAULT_CAPABILITIES,
+    Capabilities,
     CombinePort,
     Deliverable,
     DialectPort,
@@ -53,6 +55,43 @@ class ValidationFailed(Exception):
 
 class AuthoringUnsupported(Exception):
     """Raised when a deliverable is requested of a row-only execution adapter."""
+
+
+class CapabilityError(Exception):
+    """Raised when a resolved dashboard exceeds the adapter's declared surface.
+
+    Lists every unsupported item at once - each with the card it belongs to and
+    what is unsupported - and is raised before any artifact is created, so the
+    author never learns of one gap only to hit the next on the next run.
+    """
+
+    def __init__(self, unsupported: tuple[str, ...]) -> None:
+        super().__init__(
+            "the execution adapter cannot author this deliverable: "
+            + "; ".join(unsupported)
+        )
+        self.unsupported = tuple(unsupported)
+
+
+def _capability_gaps(dashboard: ResolvedDashboard, capabilities: Capabilities) -> list[str]:
+    """Every way a resolved dashboard exceeds an adapter's authoring surface.
+
+    Generic and target-blind: a card's display must be in `displays` (unless that
+    is None, meaning any); text cards require `text_cards`; dashboard-level filters
+    require `parameters`. Empty list means the whole spec is renderable.
+    """
+    gaps: list[str] = []
+    for tab in dashboard.tabs:
+        for card in tab.cards:
+            if card.is_text:
+                if not capabilities.text_cards:
+                    label = card.title or card.text.splitlines()[0].strip()
+                    gaps.append(f"card {label!r}: text cards are unsupported")
+            elif capabilities.displays is not None and card.display not in capabilities.displays:
+                gaps.append(f"card {card.title!r}: display {card.display!r} is unsupported")
+    if dashboard.parameters and not capabilities.parameters:
+        gaps.append("dashboard parameters are unsupported")
+    return gaps
 
 
 @dataclass(frozen=True)
@@ -139,6 +178,12 @@ class Engine:
             parameters=spec.parameters,
             native=spec.native,
         )
+        # Refuse before creating anything: if the spec asks for more than the
+        # adapter declares it can render, name every gap and stop here.
+        capabilities = getattr(self.execution_port, "capabilities", DEFAULT_CAPABILITIES)
+        gaps = _capability_gaps(dashboard, capabilities)
+        if gaps:
+            raise CapabilityError(tuple(gaps))
         return self.execution_port.author(dashboard)
 
     def validate_paths(self, paths: list[Path]) -> list[tuple[Path, ValidationResult]]:

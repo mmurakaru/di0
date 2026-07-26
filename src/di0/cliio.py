@@ -17,7 +17,7 @@ import sys
 from dataclasses import dataclass
 from typing import Any
 
-from di0.core import AuthoringUnsupported, ValidationFailed
+from di0.core import AuthoringUnsupported, CapabilityError, ValidationFailed
 from di0.ports import Schema
 
 # Bump on any change an agent could parse against: envelope keys, error shape,
@@ -139,7 +139,8 @@ def classify(exc: BaseException, default: str = "internal") -> Failure:
     """
     if isinstance(exc, ValidationFailed):
         return validation_failure(list(exc.result.errors))
-    if isinstance(exc, AuthoringUnsupported):
+    if isinstance(exc, (AuthoringUnsupported, CapabilityError)):
+        # Same bucket: the adapter cannot produce the requested deliverable.
         return unsupported_failure(str(exc))
     if isinstance(exc, ConfigError):
         return config_failure(str(exc), not_found=isinstance(exc.__cause__, FileNotFoundError))

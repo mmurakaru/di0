@@ -28,7 +28,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from di0.deliverable import ResolvedDashboard
-from di0.ports import Deliverable, QueryResult
+from di0.ports import Capabilities, Deliverable, QueryResult
 
 DEFAULT_API_KEY_ENV = "DI0_METABASE_API_KEY"
 DEFAULT_SESSION_ENV = "DI0_METABASE_SESSION"
@@ -321,6 +321,20 @@ class MetabaseExecution:
     @property
     def supports_authoring(self) -> bool:
         return True
+
+    @property
+    def capabilities(self) -> Capabilities:
+        # Covers everything this adapter authors today: any native display string
+        # (scalar/bar/table/line/row/pie/funnel/combo/heading/text and more), text
+        # cards, dashboard parameters, on a 24-column grid. `displays=None` keeps
+        # the refuse check a no-op for every currently-working spec.
+        return Capabilities(
+            authors=True,
+            displays=None,
+            text_cards=True,
+            parameters=True,
+            grid_columns=24,
+        )
 
     def ensure_collection(self, name: str, parent_id: int | None = None) -> int:
         """Find a collection by name under a parent, or create it. Returns its id."""

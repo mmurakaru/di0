@@ -36,6 +36,29 @@ class Deliverable:
     detail: dict[str, object] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class Capabilities:
+    """An execution adapter's authoring surface, declared statically.
+
+    The core reads this - and only this, never a target name - to refuse a resolved
+    dashboard whose features exceed what the adapter can render, before anything is
+    created. Every field is generic: `displays=None` accepts any display string, a
+    frozenset restricts to those; `grid_columns=None` means no known column count.
+    """
+
+    authors: bool = False
+    displays: frozenset[str] | None = None
+    text_cards: bool = True
+    parameters: bool = True
+    grid_columns: int | None = None
+
+
+# Permissive by design: an adapter that declares nothing is trusted to render
+# whatever a spec asks for, so the refuse check is a no-op until an adapter opts
+# into a narrower surface. Whether it authors at all is gated by `supports_authoring`.
+DEFAULT_CAPABILITIES = Capabilities()
+
+
 @runtime_checkable
 class SchemaPort(Protocol):
     """Resolve tables, columns, joins, and metrics from a schema source."""
@@ -63,13 +86,20 @@ class ExecutionPort(Protocol):
 
     `execute` is portable across every adapter. Authoring deliverables is an
     optional, BI-tool-specific capability declared by `supports_authoring` and
-    implemented through the `AuthoringPort` capability below.
+    implemented through the `AuthoringPort` capability below. `capabilities`
+    describes, statically, what that authoring surface covers so the core can
+    refuse an over-reaching spec before anything is created.
     """
 
     def execute(self, sql: str) -> QueryResult: ...
 
     @property
     def supports_authoring(self) -> bool: ...
+
+    @property
+    def capabilities(self) -> Capabilities:
+        """The authoring surface this adapter declares (permissive by default)."""
+        return DEFAULT_CAPABILITIES
 
 
 @runtime_checkable

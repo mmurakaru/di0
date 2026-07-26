@@ -120,6 +120,9 @@ class Engine:
                         x_label=card.x_label,
                         y_label=card.y_label,
                         viz=card.viz,
+                        width=card.width,
+                        height=card.height,
+                        native=card.native,
                         params=card.params,
                         field_filters=card.field_filters,
                     )
@@ -129,10 +132,12 @@ class Engine:
             name=spec.name,
             tabs=tuple(resolved_tabs),
             collection_id=spec.collection_id,
+            collection=spec.collection,
             replace=spec.replace,
             organize_by_tab=spec.organize_by_tab,
             own_collection=spec.own_collection,
             parameters=spec.parameters,
+            native=spec.native,
         )
         return self.execution_port.author(dashboard)
 

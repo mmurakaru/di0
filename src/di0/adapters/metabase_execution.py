@@ -33,6 +33,25 @@ from di0.ports import Deliverable, QueryResult
 DEFAULT_API_KEY_ENV = "DI0_METABASE_API_KEY"
 DEFAULT_SESSION_ENV = "DI0_METABASE_SESSION"
 
+# The key this adapter reads out of a spec's per-adapter `native` escape hatch.
+_NATIVE_KEY = "metabase"
+
+
+def _adapter_native(native: dict | None) -> dict:
+    """This adapter's slice of a spec's `native` mapping, or an empty dict."""
+    return (native or {}).get(_NATIVE_KEY, {})
+
+
+def _grid_size(card) -> tuple[int, int]:
+    """This adapter's 24-column grid footprint for a card.
+
+    Logical width/height are on a neutral 12-unit grid and scale x2 onto the grid;
+    when unset, the card's absolute size_x/size_y are used as-is (default 12x8).
+    """
+    size_x = card.width * 2 if card.width is not None else card.size_x
+    size_y = card.height * 2 if card.height is not None else card.size_y
+    return size_x, size_y
+
 
 @dataclass(frozen=True)
 class PlannedCard:
@@ -110,6 +129,7 @@ def _plan_dashboard(dashboard: ResolvedDashboard, existing: dict | None) -> Dash
         planned_cards: list[PlannedCard] = []
         auto_row = 0
         for card in tab.cards:
+            size_x, size_y = _grid_size(card)
             row = card.row if card.row is not None else auto_row
             col = card.col if card.col is not None else 0
             if card.is_text:
@@ -120,8 +140,8 @@ def _plan_dashboard(dashboard: ResolvedDashboard, existing: dict | None) -> Dash
                     PlannedCard(
                         row=row,
                         col=col,
-                        size_x=card.size_x,
-                        size_y=card.size_y,
+                        size_x=size_x,
+                        size_y=size_y,
                         text_visualization_settings={
                             "virtual_card": {"display": kind},
                             "text": card.text,
@@ -135,13 +155,13 @@ def _plan_dashboard(dashboard: ResolvedDashboard, existing: dict | None) -> Dash
                     reused_card_ids.add(reuse_id)
                 planned_cards.append(
                     PlannedCard(
-                        row=row, col=col, size_x=card.size_x, size_y=card.size_y,
+                        row=row, col=col, size_x=size_x, size_y=size_y,
                         reuse_card_id=reuse_id,
                     )
                 )
             # Auto-stack only advances when placement is implicit.
             if card.row is None:
-                auto_row = row + card.size_y
+                auto_row = row + size_y
         planned_tabs.append(PlannedTab(id=tab_id, name=tab.name, cards=tuple(planned_cards)))
 
     archive_ids = _all_existing_card_ids(existing) - reused_card_ids
@@ -318,12 +338,14 @@ class MetabaseExecution:
 
     def author(self, dashboard: ResolvedDashboard) -> Deliverable:
         # Opinionated safe default: author into a chosen collection, never the shared
-        # root. Prefer the spec's collection, else the profile default; refuse if neither.
-        parent_collection = (
-            dashboard.collection_id
-            if dashboard.collection_id is not None
-            else self._default_collection_id
-        )
+        # root. Prefer the spec's numeric collection_id, then a collection name/path
+        # (resolved to an id), then the profile default; refuse if none is set.
+        if dashboard.collection_id is not None:
+            parent_collection = dashboard.collection_id
+        elif dashboard.collection:
+            parent_collection = self.ensure_collection(dashboard.collection)
+        else:
+            parent_collection = self._default_collection_id
         if parent_collection is None:
             raise ValueError(
                 "refusing to author into the shared root: set a collection "
@@ -401,10 +423,17 @@ class MetabaseExecution:
                 "/api/dashboard",
                 {"name": dashboard.name, "collection_id": home_collection},
             )["id"]
+        # Dashboard-level `native` can add extra PUT fields; the computed tabs,
+        # dashcards, and parameters always win so authoring is never disturbed.
         self._request(
             "PUT",
             f"/api/dashboard/{dashboard_id}",
-            {"tabs": tabs, "dashcards": dashcards, "parameters": parameters},
+            {
+                **_adapter_native(dashboard.native),
+                "tabs": tabs,
+                "dashcards": dashcards,
+                "parameters": parameters,
+            },
         )
         if existing:
             self._archive_cards(plan.archive_card_ids)
@@ -438,8 +467,13 @@ class MetabaseExecution:
 
     def _write_card(self, card, collection_id: int | None, card_id: int | None = None) -> int:
         """Create a card, or update the given one in place (reusing its id)."""
-        # Axis-label shorthands first, then raw viz pass-through wins on conflict.
-        visualization_settings = {**_axis_settings(card.x_label, card.y_label), **card.viz}
+        # Native escape hatch is the base layer; axis-label shorthands then raw `viz`
+        # pass-through layer over it, so `viz` wins every key conflict.
+        visualization_settings = {
+            **_adapter_native(card.native),
+            **_axis_settings(card.x_label, card.y_label),
+            **card.viz,
+        }
         native: dict = {"query": card.sql}
         tags = _template_tags(card.sql, card.field_filters)
         if tags:

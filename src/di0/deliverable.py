@@ -56,7 +56,7 @@ class CardSpec:
     params: dict = field(default_factory=dict)  # dashboard-parameter slug -> query variable name
     # query variable name -> {field_id, widget_type} to author it as a native Field Filter
     # (a `{{var}}` bound to a real column) instead of a raw variable; enables multi-value filters.
-    # NOTE: the neutral filter IR is deferred to the Lightdash adapter slice (#55); these
+    # NOTE: the neutral filter IR is deferred to a later adapter slice (#55); these
     # fields stay adapter-shaped for now.
     field_filters: dict = field(default_factory=dict)
 

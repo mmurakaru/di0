@@ -14,3 +14,6 @@ build/
 
 # The on-by-default local provenance ledger. Local-only; never committed.
 .di0/
+
+# Claude Code session state and agent worktrees. Local-only; never committed.
+.claude/

@@ -41,6 +41,7 @@ _DENYLIST = (
     "looker",
     "superset",
     "tableau",
+    "lightdash",
     "drizzle",
     "strapi",
 )

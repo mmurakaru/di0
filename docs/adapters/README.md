@@ -6,7 +6,7 @@ in `di0.profile.yml` - the core and skills never name an adapter.
 
 | Port | Adapters | Profile key |
 |---|---|---|
-| SchemaPort | dbt manifest, Strapi content-types, Drizzle snapshot | `schema_source` |
+| SchemaPort | dbt manifest, Strapi content-types, Drizzle snapshot, portable semantic (OSI) | `schema_source` |
 | DialectPort | sqlglot (any dialect) | `dialect` |
 | ValidationPort | sqlglot offline, EXPLAIN (live) | `validation` |
 | ExecutionPort | Metabase, Lightdash, http-rows, no-op | `execution` |

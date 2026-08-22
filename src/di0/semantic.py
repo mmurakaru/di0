@@ -92,11 +92,8 @@ class SemanticReferenceError(ValueError):
 
 def _dataset_for(model: SemanticModel, metric: SemanticMetricDef, dimensions: tuple[str, ...]):
     """The single dataset a reference reads: the one holding its dimensions, or the
-    dataset the metric aggregates over when no dimension is requested.
-
-    Cross-dataset references (dimensions spread over more than one dataset) are out
-    of scope for this foundation and raise, rather than emit a silent partial join.
-    """
+    dataset the metric aggregates over when no dimension is requested. Dimensions
+    over more than one dataset raise rather than emit a silent partial join."""
     if dimensions:
         owning = {name: model.dataset_of_field(name) for name in dimensions}
         missing = [name for name, ds in owning.items() if ds is None]
@@ -104,9 +101,7 @@ def _dataset_for(model: SemanticModel, metric: SemanticMetricDef, dimensions: tu
             raise SemanticReferenceError(f"unknown dimension(s): {', '.join(sorted(missing))}")
         names = {ds.name for ds in owning.values()}
         if len(names) > 1:
-            raise SemanticReferenceError(
-                "cross-dataset references are not supported by this foundation"
-            )
+            raise SemanticReferenceError("cross-dataset references are not supported")
         return owning[dimensions[0]]
     dataset = model.dataset(metric.dataset)
     if dataset is None:

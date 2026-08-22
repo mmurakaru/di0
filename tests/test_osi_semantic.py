@@ -1,11 +1,5 @@
-"""The portable semantic foundation: read an interchange artifact, compose a metric
-reference into SQL, and prove that SQL against the resolved schema offline.
-
-This exercises the whole new path end to end without a warehouse: the OSI SchemaPort
-adapter, the resolver, and the existing dialect + offline validator. Rendering the
-same SQL through a BI authoring target is the existing ExecutionPort adapters' job,
-covered by their own tests - one definition, any target.
-"""
+"""Tests for the OSI schema adapter and the metric resolver: read an artifact,
+compose a metric reference into SQL, and validate it against the schema offline."""
 
 from __future__ import annotations
 

@@ -9,5 +9,6 @@ we accept. They resolve the open questions raised in the design notes.
 - [0004](0004-swappable-execution-port.md) - Execution is a swappable port; execute portable, author optional
 - [0005](0005-schema-from-version-controlled-sources.md) - Resolve schema from version-controlled sources; push semantics upstream
 - [0006](0006-no-drivers-no-credentials.md) - No data-store drivers, no credentials in the package
+- [0007](0007-portable-semantic-references-via-osi.md) - Portable semantic references; resolve metrics from an interchange artifact
 
 New ADRs start from [0000-template.md](0000-template.md).

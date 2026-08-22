@@ -18,6 +18,7 @@ from di0.adapters.http_rows_execution import HttpRowsExecution
 from di0.adapters.lightdash_execution import LightdashExecution
 from di0.adapters.metabase_execution import MetabaseExecution
 from di0.adapters.noop_execution import NoopExecution
+from di0.adapters.osi_schema import OsiSemanticSchema
 from di0.adapters.policy_validation import PolicyValidation, load_policy
 from di0.adapters.sqlglot_dialect import SqlglotDialect
 from di0.adapters.sqlglot_validation import SqlglotOfflineValidation
@@ -49,6 +50,14 @@ def build_schema_port(profile: Profile) -> SchemaPort:
             raise ValueError("drizzle-snapshot schema source requires `snapshot_path`")
         return DrizzleSnapshotSchema(
             str(snapshot_path),
+            default_namespace=str(profile.options.get("namespace", "public")),
+        )
+    if profile.schema_source == "osi":
+        osi_path = profile.options.get("osi_path")
+        if not osi_path:
+            raise ValueError("osi schema source requires `osi_path` in the profile")
+        return OsiSemanticSchema(
+            str(osi_path),
             default_namespace=str(profile.options.get("namespace", "public")),
         )
     raise ValueError(f"unknown schema_source: {profile.schema_source}")

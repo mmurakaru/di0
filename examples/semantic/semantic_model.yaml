@@ -1,0 +1,62 @@
+# A portable semantic interchange artifact (vendor-neutral).
+#
+# Metrics and dimensions are defined once here, upstream, and referenced by name
+# from a deliverable. di0 reads this file through the OSI SchemaPort adapter and
+# composes SQL from these expressions; it never edits or infers them. In a real
+# project this file is produced by an upstream converter and committed to version
+# control, then named by `osi_path` in the profile.
+version: 0.2.0
+semantic_model:
+  - name: ecommerce
+    description: Orders and the revenue derived from them.
+    ai_context: Use for revenue and order-volume questions grouped by date or status.
+    datasets:
+      - name: orders
+        source: warehouse.analytics.orders
+        primary_key: [order_id]
+        fields:
+          - name: order_id
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: order_id
+            datatype: Integer
+          - name: amount
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: amount
+            datatype: Decimal
+          - name: order_date
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: order_date
+            dimension:
+              is_time: true
+            datatype: Date
+          - name: status
+            expression:
+              dialects:
+                - dialect: ANSI_SQL
+                  expression: status
+            dimension:
+              is_time: false
+            datatype: String
+    metrics:
+      - name: total_revenue
+        description: Sum of all order amounts.
+        dataset: orders
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: SUM(orders.amount)
+        datatype: Decimal
+      - name: order_count
+        description: Distinct count of orders.
+        dataset: orders
+        expression:
+          dialects:
+            - dialect: ANSI_SQL
+              expression: COUNT(DISTINCT orders.order_id)
+        datatype: Integer

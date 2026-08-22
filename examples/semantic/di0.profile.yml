@@ -1,0 +1,7 @@
+# Point di0 at a portable semantic interchange artifact. The metrics resolve from
+# this one file; switching the schema source is a profile change, not a code change.
+schema_source: osi
+osi_path: ./semantic_model.yaml
+dialect: snowflake
+validation: sqlglot-offline
+execution: noop

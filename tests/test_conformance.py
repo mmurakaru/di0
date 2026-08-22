@@ -20,6 +20,7 @@ from di0.adapters.duckdb_combine import DuckdbCombine
 from di0.adapters.http_rows_execution import HttpRowsExecution
 from di0.adapters.metabase_execution import MetabaseExecution
 from di0.adapters.noop_execution import NoopExecution
+from di0.adapters.osi_schema import OsiSemanticSchema
 from di0.adapters.sqlglot_dialect import SqlglotDialect
 from di0.adapters.sqlglot_validation import SqlglotOfflineValidation
 from di0.deliverable import DashboardSpec, ResolvedCard, ResolvedDashboard, ResolvedTab
@@ -27,6 +28,9 @@ from di0.ports import Capabilities, Deliverable, QueryResult
 from di0.testing import conformance
 
 FIXTURE_MANIFEST = str(Path(__file__).parent / "fixtures" / "manifest.json")
+EXAMPLE_OSI = str(
+    Path(__file__).resolve().parent.parent / "examples" / "semantic" / "semantic_model.yaml"
+)
 DIALECT = "snowflake"
 NOOP_REFERENCE = "di0.adapters.noop_execution:NoopExecution"
 
@@ -47,6 +51,10 @@ def _fixture_schema() -> dict:
 
 def test_dbt_manifest_schema_conforms():
     conformance.check_schema_port(DbtManifestSchema(FIXTURE_MANIFEST))
+
+
+def test_osi_semantic_schema_conforms():
+    conformance.check_schema_port(OsiSemanticSchema(EXAMPLE_OSI))
 
 
 def test_sqlglot_dialect_conforms():

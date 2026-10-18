@@ -18,6 +18,7 @@ VERBS = (
     "resolve-schema",
     "compose-and-validate",
     "execute-and-author",
+    "classify-chart",
     "investigate",
     "reconcile",
     "narrate",
@@ -40,6 +41,20 @@ FORBIDDEN = (
 def test_all_verb_skills_present():
     for verb in VERBS:
         assert (SKILLS_DIR / verb / "SKILL.md").exists(), f"missing skill: {verb}"
+
+
+# Project skill folders: .agents/skills (Codex, pi) and .claude/skills (Claude Code).
+HARNESS_SKILL_DIRS = (REPO_ROOT / ".agents" / "skills", REPO_ROOT / ".claude" / "skills")
+
+
+def test_every_verb_skill_is_linked_for_each_agent_harness():
+    missing = []
+    for harness_dir in HARNESS_SKILL_DIRS:
+        for verb in VERBS:
+            link = harness_dir / verb
+            if not (link.is_symlink() and link.resolve() == (SKILLS_DIR / verb).resolve()):
+                missing.append(str(link.relative_to(REPO_ROOT)))
+    assert not missing, "link each verb skill as ../../skills/<verb>:\n" + "\n".join(missing)
 
 
 def test_skills_name_no_warehouse_or_dialect():

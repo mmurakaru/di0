@@ -148,3 +148,16 @@ tabs:
 
 With `validation: explain`, di0 proves each query with `EXPLAIN` over this same
 connection before running or authoring it - no compute cost.
+
+## Chart catalog
+
+`di0 classify-chart` picks each card's `display` from `src/di0/adapters/metabase_chart_catalog.py`.
+Each entry has the Metabase display identifier, a title, a purpose in the wording of the Metabase visualization docs, and a docs link.
+Every link pins one docs version (`METABASE_DOCS_VERSION`), so a stale entry is visible.
+The catalog leaves out `list` (hidden in the visualization picker) and `pivot` (Metabase renders pivot tables only for query-builder questions, and di0 authors native SQL cards).
+
+To refresh the catalog for a new Metabase release:
+
+1. Compare the identifiers registered in Metabase's `frontend/src/metabase/visualizations/register.ts` with the catalog.
+2. Change the version in every link and in `METABASE_DOCS_VERSION`.
+3. Read the changed visualization pages and update each purpose that no longer matches.

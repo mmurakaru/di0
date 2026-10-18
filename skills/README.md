@@ -9,6 +9,7 @@ warehouse is a bug, exactly like a hard-coded table name.
 | [resolve-schema](resolve-schema/SKILL.md) | SchemaPort |
 | [compose-and-validate](compose-and-validate/SKILL.md) | DialectPort + ValidationPort |
 | [execute-and-author](execute-and-author/SKILL.md) | ExecutionPort |
+| [classify-chart](classify-chart/SKILL.md) | chart catalog of the execution backend |
 | [investigate](investigate/SKILL.md) | warehouse-blind method |
 | [reconcile](reconcile/SKILL.md) | warehouse-blind method |
 | [narrate](narrate/SKILL.md) | warehouse-blind method |

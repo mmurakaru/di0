@@ -15,7 +15,9 @@ from di0.adapters.drizzle_schema import DrizzleSnapshotSchema
 from di0.adapters.duckdb_combine import DuckdbCombine
 from di0.adapters.explain_validation import ExplainValidation
 from di0.adapters.http_rows_execution import HttpRowsExecution
+from di0.adapters.lightdash_chart_catalog import LIGHTDASH_CHART_CATALOG
 from di0.adapters.lightdash_execution import LightdashExecution
+from di0.adapters.metabase_chart_catalog import METABASE_CHART_CATALOG
 from di0.adapters.metabase_execution import MetabaseExecution
 from di0.adapters.noop_execution import NoopExecution
 from di0.adapters.osi_schema import OsiSemanticSchema
@@ -23,7 +25,9 @@ from di0.adapters.policy_validation import PolicyValidation, load_policy
 from di0.adapters.sqlglot_dialect import SqlglotDialect
 from di0.adapters.sqlglot_validation import SqlglotOfflineValidation
 from di0.adapters.strapi_schema import StrapiContentTypeSchema
+from di0.adapters.typesafe_chart_chooser import TypeSafeChartChooser
 from di0.audit import Audit, AuditLedger, NullAudit
+from di0.chart_classification import ChartChooser, ChartOption
 from di0.core import Engine
 from di0.ports import CombinePort, DialectPort, ExecutionPort, SchemaPort, ValidationPort
 from di0.profile import Profile
@@ -137,6 +141,23 @@ def build_execution_port(profile: Profile) -> ExecutionPort:
         kwargs = {"api_key_env": str(api_key_env)} if api_key_env else {}
         return HttpRowsExecution(str(base_url), **kwargs)
     raise ValueError(f"unknown execution target: {profile.execution}")
+
+
+def build_chart_catalog(profile: Profile) -> tuple[ChartOption, ...]:
+    """The chart types the profile's execution backend can author, for chart classification."""
+    if profile.execution == "metabase":
+        return METABASE_CHART_CATALOG
+    if profile.execution == "lightdash":
+        return LIGHTDASH_CHART_CATALOG
+    raise ValueError(
+        f"execution target {profile.execution!r} has no chart catalog "
+        "(chart classification supports: metabase, lightdash)"
+    )
+
+
+def build_chart_chooser() -> ChartChooser:
+    """The model that picks a chart type for each dashboard question."""
+    return TypeSafeChartChooser()
 
 
 def build_combine_port() -> CombinePort:

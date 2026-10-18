@@ -24,10 +24,16 @@ dependencies = [
 [project.scripts]
 di0 = "di0.cli:main"
 
+[project.optional-dependencies]
+classify = [
+    "typesafe-sdk>=0.7.5",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
     "ruff>=0.17.1",
+    "typesafe-sdk>=0.7.5",
 ]
 
 [build-system]

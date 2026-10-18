@@ -13,13 +13,19 @@ import shutil
 import sys
 from pathlib import Path
 
-from di0 import cliio, core, doctor
+from di0 import cliio, core, doctor, registry
+from di0.chart_classification import ChartQuestion, classify_charts
 from di0.core import Engine, ValidationFailed
 from di0.deliverable import DashboardSpec
 from di0.guard import DEFAULT_PYPROJECT
 from di0.profile import DEFAULT_PROFILE_NAME, load_profile
 from di0.reconcile import ReconcileSpec
-from di0.registry import build_combine_port, build_engine, default_audit_path
+from di0.registry import (
+    build_chart_catalog,
+    build_combine_port,
+    build_engine,
+    default_audit_path,
+)
 
 # Your private content (queries, profiles, specs) lives in a workspace directory,
 # gitignored so nothing private is ever committed. Default `./workspace`; override
@@ -42,6 +48,7 @@ _CONTRACT_COMMANDS = (
     "doctor",
     "conformance",
     "audit",
+    "classify-chart",
 )
 
 
@@ -214,6 +221,41 @@ def _cmd_author(args: argparse.Namespace) -> int:
     if json_mode:
         return cliio.emit_ok("author", data)
     print(f"Authored {deliverable.kind} {deliverable.identifier}: {deliverable.detail['url']}")
+    return 0
+
+
+def _chart_questions(args: argparse.Namespace) -> list[ChartQuestion]:
+    """Chart questions from --question (text only) and --input (JSON list, `-` for stdin)."""
+    import json
+
+    questions = [ChartQuestion(text) for text in args.question or ()]
+    if args.input:
+        raw = sys.stdin.read() if args.input == "-" else Path(args.input).read_text()
+        questions += [ChartQuestion.from_mapping(item) for item in json.loads(raw)]
+    if not questions:
+        raise ValueError(
+            "Chart classification needs at least one question: pass --question or --input"
+        )
+    return questions
+
+
+def _cmd_classify_chart(args: argparse.Namespace) -> int:
+    json_mode = cliio.is_json(args)
+    try:
+        catalog = build_chart_catalog(load_profile(args.profile))
+        questions = _chart_questions(args)
+        chooser = registry.build_chart_chooser()
+    except Exception as error:  # noqa: BLE001 - profile, input, or key = config phase
+        return cliio.handle_exception("classify-chart", error, json_mode, default="config")
+    try:
+        classifications = classify_charts(questions, catalog, chooser)
+    except Exception as error:  # noqa: BLE001 - the model call or its answer
+        return cliio.handle_exception("classify-chart", error, json_mode, default="execution")
+    if json_mode:
+        data = {"classifications": [item.to_dict() for item in classifications]}
+        return cliio.emit_ok("classify-chart", data)
+    for item in classifications:
+        print(f"{item.display:<12} {item.probability:.2f}  {item.question}  {item.docs_url}")
     return 0
 
 
@@ -556,6 +598,20 @@ def _build_parser() -> argparse.ArgumentParser:
         "--sql", default="SELECT 1", help="sample SQL the checks probe the adapter with"
     )
     conformance_cmd.set_defaults(func=_cmd_conformance)
+
+    classify_chart_cmd = sub.add_parser(
+        "classify-chart",
+        parents=[fmt],
+        help="pick the chart type that best answers each dashboard question",
+    )
+    classify_chart_cmd.add_argument(
+        "--question", action="append", help="a question the chart must answer (repeatable)"
+    )
+    classify_chart_cmd.add_argument(
+        "--input",
+        help="JSON list of {question, result_columns: [{name, data_type}], row_count}; - for stdin",
+    )
+    classify_chart_cmd.set_defaults(func=_cmd_classify_chart)
 
     audit_cmd = sub.add_parser("audit", help="inspect the local provenance ledger")
     audit_sub = audit_cmd.add_subparsers(dest="audit_command", required=True)

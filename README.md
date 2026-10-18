@@ -66,6 +66,7 @@ execution: noop
 ```bash
 uv sync --dev
 uv run di0 init   # scaffold your gitignored workspace/ from examples/ (put your queries/profiles/specs there)
+cp .env.example .env   # load it with `uv run --env-file .env ...`
 uv run di0 validate "SELECT customer_id, current_arr FROM analytics.dim_customers"
 uv run pytest -q
 ```

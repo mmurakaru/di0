@@ -103,3 +103,8 @@ a restrictive capability descriptor and the core refuses an over-reaching spec
 
 A spec that stays within these limits authors unchanged; one that exceeds them
 fails fast with a `CapabilityError` and writes nothing.
+
+## Chart catalog
+
+`di0 classify-chart` picks each card's `display` from `src/di0/adapters/lightdash_chart_catalog.py`: the four displays above, each with a purpose in the wording of the Lightdash visualization docs and a docs link.
+The Lightdash docs have no versions, so the links point to the current pages.

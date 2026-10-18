@@ -18,6 +18,7 @@ VERBS = (
     "resolve-schema",
     "compose-and-validate",
     "execute-and-author",
+    "classify-chart",
     "investigate",
     "reconcile",
     "narrate",

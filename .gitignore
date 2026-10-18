@@ -18,5 +18,6 @@ build/
 # Local secrets (copy from .env.example). Never committed.
 .env
 
-# Claude Code session state and agent worktrees. Local-only; never committed.
-.claude/
+# Claude Code session state and agent worktrees stay local; the skill links are committed.
+.claude/*
+!.claude/skills/

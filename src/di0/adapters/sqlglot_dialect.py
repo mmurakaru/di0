@@ -19,4 +19,4 @@ class SqlglotDialect:
         # Parse and re-render in the target dialect; this normalizes the SQL and
         # fails fast on a syntax error before validation/execution.
         expression = sqlglot.parse_one(sql, read=self._dialect)
-        return expression.sql(dialect=self._dialect)
+        return expression.sql(dialect=self._dialect, pretty=True, pad=4)

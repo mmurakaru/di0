@@ -23,6 +23,8 @@ jobs:
         run: uv sync --dev
       - name: Lint
         run: uv run ruff check .
+      - name: Lint SQL
+        run: uv run sqlfluff lint examples src/di0/templates
       - name: Test
         run: uv run pytest -q
       - name: Check queries against the schema (drift gate)

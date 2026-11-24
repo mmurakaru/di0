@@ -1,4 +1,7 @@
-SELECT c.customer_id, SUM(r.arr) AS total_arr
-FROM analytics.dim_customers c
-JOIN analytics.fct_subscription_revenue r ON r.customer_id = c.customer_id
-GROUP BY c.customer_id
+SELECT
+    customers.customer_id,
+    SUM(revenue.arr) AS total_arr
+FROM analytics.dim_customers AS customers
+INNER JOIN analytics.fct_subscription_revenue AS revenue
+    ON customers.customer_id = revenue.customer_id
+GROUP BY customers.customer_id

@@ -69,6 +69,7 @@ uv run di0 init   # scaffold your gitignored workspace/ from examples/ (put your
 cp .env.example .env   # load it with `uv run --env-file .env ...`
 uv run di0 validate "SELECT customer_id, current_arr FROM analytics.dim_customers"
 uv run pytest -q
+uv run sqlfluff lint examples src/di0/templates
 ```
 
 A query over unknown columns fails before it ever reaches a warehouse.

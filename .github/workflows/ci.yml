@@ -16,13 +16,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.4.0
       - name: Set up Python
         run: uv python install ${{ matrix.python-version }}
       - name: Sync dependencies
         run: uv sync --dev
       - name: Lint
         run: uv run ruff check .
+      - name: Lint SQL
+        run: uv run sqlfluff lint examples src/di0/templates
       - name: Test
         run: uv run pytest -q
       - name: Check queries against the schema (drift gate)

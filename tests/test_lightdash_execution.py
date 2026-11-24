@@ -23,6 +23,7 @@ from di0.registry import build_engine, build_execution_port
 FIXTURE_MANIFEST = str(Path(__file__).parent / "fixtures" / "manifest.json")
 
 CUSTOMERS_SQL = "SELECT customer_id, current_arr FROM analytics.dim_customers"
+CUSTOMERS_SQL_COMPOSED = "SELECT\n    customer_id,\n    current_arr\nFROM analytics.dim_customers"
 
 
 def _profile(base_url: str, **extra: object) -> Profile:
@@ -119,7 +120,7 @@ def test_author_creates_space_chart_and_dashboard(lightdash_backend, monkeypatch
     assert len(recorder.charts) == 1
     chart = recorder.charts[0]
     assert chart["name"] == "Signups per week"
-    assert chart["sql"] == CUSTOMERS_SQL
+    assert chart["sql"] == CUSTOMERS_SQL_COMPOSED
     assert chart["spaceUuid"] == "space-1"
     assert chart["slug"] == "signups-per-week"
     assert chart["config"]["type"] == "vertical_bar"  # display: bar -> vertical_bar

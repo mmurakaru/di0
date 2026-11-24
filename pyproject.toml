@@ -16,9 +16,9 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
-    "sqlglot>=30",
-    "pyyaml>=6",
-    "duckdb>=1.5",
+    "sqlglot>=30.34.0",
+    "pyyaml>=6.0.4",
+    "duckdb>=2.0.1",
 ]
 
 [project.scripts]
@@ -31,13 +31,14 @@ classify = [
 
 [dependency-groups]
 dev = [
-    "pytest>=9.1.1",
-    "ruff>=0.17.1",
+    "pytest>=9.2.0",
+    "ruff>=0.17.6",
+    "sqlfluff>=4.5.0",
     "typesafe-sdk>=0.7.5",
 ]
 
 [build-system]
-requires = ["hatchling>=1.32.4"]
+requires = ["hatchling>=1.33.0"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
@@ -49,6 +50,43 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.sqlfluff.core]
+dialect = "snowflake"
+max_line_length = 100
+
+[tool.sqlfluff.indentation]
+tab_space_size = 4
+
+[tool.sqlfluff.layout.type.comma]
+line_position = "trailing"
+
+[tool.sqlfluff.rules.capitalisation.keywords]
+capitalisation_policy = "upper"
+
+[tool.sqlfluff.rules.capitalisation.functions]
+extended_capitalisation_policy = "upper"
+
+[tool.sqlfluff.rules.capitalisation.literals]
+capitalisation_policy = "upper"
+
+[tool.sqlfluff.rules.capitalisation.types]
+extended_capitalisation_policy = "upper"
+
+[tool.sqlfluff.rules.capitalisation.identifiers]
+extended_capitalisation_policy = "lower"
+
+[tool.sqlfluff.rules.aliasing.table]
+aliasing = "explicit"
+
+[tool.sqlfluff.rules.aliasing.column]
+aliasing = "explicit"
+
+[tool.sqlfluff.rules.aliasing.length]
+min_alias_length = 4
+
+[tool.sqlfluff.rules.ambiguous.join]
+fully_qualify_join_types = "inner"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
